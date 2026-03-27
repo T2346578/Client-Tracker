@@ -1044,7 +1044,7 @@ function renderInvoices(routeId) {
           <td class="py-2">${client?.name || "Unknown"}</td>
           <td class="py-2 text-right tabular-nums font-semibold">${moneyFromCents(totals.totalCents, currency)}</td>
           <td class="py-2 text-right">
-            <button class="btn btn-secondary" data-open-inv="${inv.id}">Open</button>
+            <button class="btn btn-secondary" data-edit-inv="${inv.id}">Edit</button>
             <button class="btn btn-secondary" data-print-inv="${inv.id}">Print</button>
             <button class="btn btn-danger" data-del-inv="${inv.id}">Delete</button>
           </td>
@@ -1099,7 +1099,7 @@ function renderInvoices(routeId) {
   `;
 
   // Wire list actions
-  el.querySelectorAll("[data-open-inv]").forEach((btn) => (btn.onclick = () => navTo(`#/invoices/${btn.getAttribute("data-open-inv")}`)));
+  el.querySelectorAll("[data-edit-inv]").forEach((btn) => (btn.onclick = () => navTo(`#/invoices/${btn.getAttribute("data-edit-inv")}`)));
   el.querySelectorAll("[data-print-inv]").forEach((btn) => (btn.onclick = () => openPrint(btn.getAttribute("data-print-inv"))));
   el.querySelectorAll("[data-del-inv]").forEach((btn) => {
     btn.onclick = () => {
@@ -1594,20 +1594,33 @@ function renderReceipts() {
   el.innerHTML = `
     <div class="grid gap-4">
       <div class="card p-5">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div class="text-lg font-semibold">Receipts</div>
-            <div class="text-sm text-slate-400">
+        <div
+          class="flex flex-col gap-4 border-b border-white/10 pb-5 md:flex-row md:flex-wrap md:items-end md:gap-6 lg:flex-nowrap lg:items-stretch lg:gap-8"
+        >
+          <div class="min-w-0 md:flex-1 lg:max-w-xl">
+            <div class="text-lg font-semibold tracking-tight">Receipts</div>
+            <p class="mt-1 text-sm leading-relaxed text-slate-400">
               Shows payments recorded on your invoices (bank payment, cash, cheque, etc).
-            </div>
+            </p>
           </div>
-          <div class="flex items-end gap-2">
-            <div>
+          <div class="flex shrink-0 flex-wrap items-end gap-2">
+            <div class="w-full min-w-[11rem] max-w-full sm:w-44 md:w-44">
               <label class="label">Filter month</label>
-              <input id="receiptsMonth" type="month" class="field" />
+              <input id="receiptsMonth" type="month" class="field w-full" />
             </div>
-            <button id="clearReceiptsFilter" class="btn btn-secondary">All</button>
-            <button id="printReceiptsBtn" class="btn btn-secondary">Print / export</button>
+            <button type="button" id="clearReceiptsFilter" class="btn btn-secondary shrink-0">All</button>
+          </div>
+          <div
+            id="receiptsTotalsBox"
+            class="flex min-h-full min-w-[11rem] shrink-0 flex-col justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-3 md:ml-auto md:text-right"
+          >
+            <div id="receiptsTotalsLabel" class="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Total
+            </div>
+            <div id="receiptsTotalsAmount" class="mt-1 text-xl font-semibold tabular-nums text-slate-100">
+              —
+            </div>
+            <div id="receiptsTotalsMeta" class="mt-1 text-xs text-slate-400"></div>
           </div>
         </div>
 
@@ -1620,11 +1633,10 @@ function renderReceipts() {
                 <th class="py-2 text-left font-semibold">Method</th>
                 <th class="py-2 text-right font-semibold">Amount</th>
                 <th class="py-2 text-left font-semibold">Invoice</th>
-                <th class="py-2 text-right font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td class="py-3 text-slate-300" colspan="6">Loading…</td></tr>
+              <tr><td class="py-3 text-slate-300" colspan="5">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1650,7 +1662,7 @@ function renderReceipts() {
 
     const rows =
       filtered.length === 0
-        ? `<tr><td class="py-3 text-slate-300" colspan="6">No receipts for this filter.</td></tr>`
+        ? `<tr><td class="py-3 text-slate-300" colspan="5">No receipts for this filter.</td></tr>`
         : filtered
             .map((r) => {
               return `
@@ -1660,18 +1672,6 @@ function renderReceipts() {
                   <td class="py-2">${formatPaymentMethod(r.method)}</td>
                   <td class="py-2 text-right tabular-nums font-semibold">${moneyFromCents(r.amountCents, currency)}</td>
                   <td class="py-2">${r.invoiceNumber ? `#${r.invoiceNumber}` : "-"}</td>
-                  <td class="py-2 text-right">
-                    ${
-                      r.receiptUrl
-                        ? `<a href="${r.receiptUrl}" target="_blank" rel="noreferrer" class="btn btn-secondary">Open file</a>`
-                        : ""
-                    }
-                    ${
-                      r.invoiceId
-                        ? `<button class="btn btn-secondary" data-open-inv="${r.invoiceId}">Open invoice</button>`
-                        : ""
-                    }
-                  </td>
                 </tr>
               `;
             })
@@ -1679,9 +1679,25 @@ function renderReceipts() {
 
     tbody.innerHTML = rows;
 
-    tbody.querySelectorAll("[data-open-inv]").forEach((btn) => {
-      btn.onclick = () => navTo(`#/invoices/${btn.getAttribute("data-open-inv")}`);
-    });
+    const totalCents = sumCents(filtered.map((r) => r.amountCents));
+    const labelEl = $("#receiptsTotalsLabel");
+    const amountEl = $("#receiptsTotalsAmount");
+    const metaEl = $("#receiptsTotalsMeta");
+    if (labelEl && amountEl && metaEl) {
+      if (monthFilter) {
+        const [y, m] = monthFilter.split("-");
+        const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleString(undefined, {
+          month: "long",
+          year: "numeric",
+        });
+        labelEl.textContent = `Total — ${monthName}`;
+      } else {
+        labelEl.textContent = "Total — all time";
+      }
+      amountEl.textContent = moneyFromCents(totalCents, currency);
+      const n = filtered.length;
+      metaEl.textContent = `${n} payment${n === 1 ? "" : "s"} in view`;
+    }
   }
 
   const monthInput = $("#receiptsMonth");
@@ -1694,11 +1710,6 @@ function renderReceipts() {
   $("#clearReceiptsFilter").onclick = () => {
     monthInput.value = "";
     renderReceiptsTable("");
-  };
-
-  // Let the browser handle printing; user can choose "Save as PDF" to export.
-  $("#printReceiptsBtn").onclick = () => {
-    window.print();
   };
 }
 
