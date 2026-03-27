@@ -1044,7 +1044,7 @@ function renderInvoices(routeId) {
           <td class="py-2">${client?.name || "Unknown"}</td>
           <td class="py-2 text-right tabular-nums font-semibold">${moneyFromCents(totals.totalCents, currency)}</td>
           <td class="py-2 text-right">
-            <button class="btn btn-secondary" data-open-inv="${inv.id}">Open</button>
+            <button class="btn btn-secondary" data-edit-inv="${inv.id}">Edit</button>
             <button class="btn btn-secondary" data-print-inv="${inv.id}">Print</button>
             <button class="btn btn-danger" data-del-inv="${inv.id}">Delete</button>
           </td>
@@ -1099,7 +1099,7 @@ function renderInvoices(routeId) {
   `;
 
   // Wire list actions
-  el.querySelectorAll("[data-open-inv]").forEach((btn) => (btn.onclick = () => navTo(`#/invoices/${btn.getAttribute("data-open-inv")}`)));
+  el.querySelectorAll("[data-edit-inv]").forEach((btn) => (btn.onclick = () => navTo(`#/invoices/${btn.getAttribute("data-edit-inv")}`)));
   el.querySelectorAll("[data-print-inv]").forEach((btn) => (btn.onclick = () => openPrint(btn.getAttribute("data-print-inv"))));
   el.querySelectorAll("[data-del-inv]").forEach((btn) => {
     btn.onclick = () => {
@@ -1620,11 +1620,10 @@ function renderReceipts() {
                 <th class="py-2 text-left font-semibold">Method</th>
                 <th class="py-2 text-right font-semibold">Amount</th>
                 <th class="py-2 text-left font-semibold">Invoice</th>
-                <th class="py-2 text-right font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td class="py-3 text-slate-300" colspan="6">Loading…</td></tr>
+              <tr><td class="py-3 text-slate-300" colspan="5">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1650,7 +1649,7 @@ function renderReceipts() {
 
     const rows =
       filtered.length === 0
-        ? `<tr><td class="py-3 text-slate-300" colspan="6">No receipts for this filter.</td></tr>`
+        ? `<tr><td class="py-3 text-slate-300" colspan="5">No receipts for this filter.</td></tr>`
         : filtered
             .map((r) => {
               return `
@@ -1660,28 +1659,12 @@ function renderReceipts() {
                   <td class="py-2">${formatPaymentMethod(r.method)}</td>
                   <td class="py-2 text-right tabular-nums font-semibold">${moneyFromCents(r.amountCents, currency)}</td>
                   <td class="py-2">${r.invoiceNumber ? `#${r.invoiceNumber}` : "-"}</td>
-                  <td class="py-2 text-right">
-                    ${
-                      r.receiptUrl
-                        ? `<a href="${r.receiptUrl}" target="_blank" rel="noreferrer" class="btn btn-secondary">Open file</a>`
-                        : ""
-                    }
-                    ${
-                      r.invoiceId
-                        ? `<button class="btn btn-secondary" data-open-inv="${r.invoiceId}">Open invoice</button>`
-                        : ""
-                    }
-                  </td>
                 </tr>
               `;
             })
             .join("");
 
     tbody.innerHTML = rows;
-
-    tbody.querySelectorAll("[data-open-inv]").forEach((btn) => {
-      btn.onclick = () => navTo(`#/invoices/${btn.getAttribute("data-open-inv")}`);
-    });
   }
 
   const monthInput = $("#receiptsMonth");
