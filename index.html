@@ -1,10 +1,73 @@
-
-[487 lines collapsed]
-
+      <button class="btn ghost" id="saveDraftBtn">Save draft</button>
+      <button class="btn" id="sendQuoteBtn" ${db.clients.length===0?'disabled':''}>Save & mark sent</button>
+    </div>`;
+}
+function refreshItemsUI(){
+  document.getElementById('itemsWrap').innerHTML = workingQuote.items.map((it,i)=>`
+    <div class="li-row" data-idx="${i}">
+      <input class="it-desc" placeholder="Description" value="${esc(it.desc)}">
+      <input class="it-qty" type="number" min="0" placeholder="Qty" value="${it.qty}">
+      <input class="it-price" type="number" min="0" step="0.01" placeholder="Price" value="${it.price}">
+      <button class="rm" data-rm="${i}">✕</button>
+    </div>`).join('');
+  bindItemInputs();
+  document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote));
+}
+function bindItemInputs(){
+  document.querySelectorAll('#itemsWrap .li-row').forEach(row=>{
+    const idx = +row.dataset.idx;
+    row.querySelector('.it-desc').addEventListener('input', e=> workingQuote.items[idx].desc = e.target.value);
+    row.querySelector('.it-qty').addEventListener('input', e=>{ workingQuote.items[idx].qty = e.target.value; document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote)); });
+    row.querySelector('.it-price').addEventListener('input', e=>{ workingQuote.items[idx].price = e.target.value; document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote)); });
+  });
+  document.querySelectorAll('#itemsWrap .rm').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ workingQuote.items.splice(+btn.dataset.rm,1); if(workingQuote.items.length===0) workingQuote.items.push({desc:'',qty:1,price:0}); refreshItemsUI(); });
+  });
+}
+function buildQuoteMessage(q, client){
+  const s = db.settings;
+  const kindLabel = q.kind==='invoice' ? 'Invoice' : 'Quote';
+  const from = s.businessName || 'us';
+  const lines = [
+    `Hi ${client?client.name:'there'},`, '',
+    `Here's your ${kindLabel.toLowerCase()} #${q.num} from ${from}.`, '',
+    ...q.items.map(it=>`- ${it.desc||'Item'} x${it.qty}: ${fmt((Number(it.qty)||0)*(Number(it.price)||0))}`),
+    '', `Total: ${fmt(quoteTotal(q))}`, '',
+    `Questions? Reach us at ${s.email}${s.phone?(' or '+s.phone):''}.`, '',
+    `Thanks,`, from
+  ];
+  return { subject: `${kindLabel} #${q.num} from ${from}`, body: lines.join('\n') };
+}
+function quoteDetail(q){
+  const client = db.clients.find(c=>c.id===q.clientId);
+  const itemsHtml = q.items.map(it=>`<div class="trow"><span>${esc(it.desc)||'Item'} × ${it.qty}</span><span>${fmt((Number(it.qty)||0)*(Number(it.price)||0))}</span></div>`).join('');
+  const msg = buildQuoteMessage(q, client);
+  const mailHref = client && client.email
+    ? `mailto:${encodeURIComponent(client.email)}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`
+    : null;
+  const smsHref = client && client.phone
+    ? `sms:${encodeURIComponent(client.phone)}?body=${encodeURIComponent(msg.subject+' — '+fmt(quoteTotal(q))+'. Details in your email, or call us at '+db.settings.phone+'.')}`
+    : null;
+  return `
+    <h2>#${q.num} for ${client?esc(client.name):'—'}</h2>
+    <span class="status-pill status-${q.status}">${q.status}</span>
+    <div class="totals" style="margin-top:12px;">${itemsHtml}<div class="trow grand"><span>Total</span><span>${fmt(quoteTotal(q))}</span></div></div>
+    <div class="modal-actions" style="flex-wrap:wrap;">
+      ${mailHref ? `<a class="btn ghost small" id="emailQuoteBtn" href="${mailHref}">Email quote</a>` : `<span class="meta">Add client email to send by email</span>`}
+      ${smsHref ? `<a class="btn ghost small" id="textQuoteBtn" href="${smsHref}">Text quote</a>` : ''}
+    </div>
+    <div class="modal-actions" style="flex-wrap:wrap;">
+      <button class="btn danger" id="deleteQuoteBtn">Delete</button>
+      <button class="btn ghost" id="editQuoteBtn">Edit</button>
+      ${q.status!=='paid' ? `<button class="btn" id="markPaidBtn">Mark paid</button>` : ''}
+      ${q.status==='draft' ? `<button class="btn" id="markSentBtn">Mark sent</button>` : ''}
+      ${(q.status==='sent') ? `<button class="btn" id="convertInvoiceBtn">Convert to invoice</button>` : ''}
+    </div>`;
+}
+// ---------- event wiring ----------
 function attachHandlers(){
   // Clients view
   const addClientBtn = document.getElementById('addClientBtn');
-  if(addClientBtn) addClientBtn.addEventListener('click', ()=> openModal(clientForm(null)));
   if(addClientBtn) addClientBtn.addEventListener('click', ()=>{
     openModal(clientForm(null));
     bindClientFormIfPresent(null);
@@ -12,14 +75,11 @@ function attachHandlers(){
   document.querySelectorAll('[data-client]').forEach(row=>{
     row.addEventListener('click', ()=>{
       const c = db.clients.find(x=>x.id===row.dataset.client);
-
-[1 line collapsed]
-
+      openModal(clientDetail(c));
       bindClientDetailActions(c);
     });
   });
-  bindClientFormIfPresent(null);
-  // Schedule view
+// Schedule view
   const addJobBtn = document.getElementById('addJobBtn');
 
 [52 lines collapsed]
@@ -27,7 +87,6 @@ function attachHandlers(){
   document.getElementById('cancelBtn').addEventListener('click', closeModal);
   saveBtn.addEventListener('click', ()=>{
     const name = document.getElementById('f_name').value.trim();
-    if(!name) return;
     if(!name){
       document.getElementById('f_name').focus();
       return;
@@ -35,5 +94,75 @@ function attachHandlers(){
     const data = {
       name, address: document.getElementById('f_address').value.trim(),
       phone: document.getElementById('f_phone').value.trim(),
-
-[77 lines collapsed]
+      email: document.getElementById('f_email').value.trim()
+    };
+    if(existing){ Object.assign(existing, data); }
+    else { db.clients.push({ id: uid(), ...data }); }
+    saveDB(); closeModal(); render();
+  });
+  const delBtn = document.getElementById('deleteClientBtn');
+  if(delBtn) delBtn.addEventListener('click', ()=>{
+    db.clients = db.clients.filter(c=>c.id!==existing.id);
+    db.jobs = db.jobs.filter(j=>j.clientId!==existing.id);
+    db.quotes = db.quotes.filter(q=>q.clientId!==existing.id);
+    saveDB(); closeModal(); render();
+  });
+}
+function bindClientDetailActions(c){
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('editClientBtn').addEventListener('click', ()=>{
+    openModal(clientForm(c)); bindClientFormIfPresent(c);
+  });
+}
+function bindJobFormActions(existing){
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  const saveBtn = document.getElementById('saveJobBtn');
+  if(saveBtn) saveBtn.addEventListener('click', ()=>{
+    const clientId = document.getElementById('f_client').value;
+    const title = document.getElementById('f_title').value.trim() || 'Job';
+    const date = document.getElementById('f_date').value;
+    const time = document.getElementById('f_time').value;
+    const notes = document.getElementById('f_notes').value.trim();
+    if(!date) return;
+    db.jobs.push({ id: uid(), clientId, title, date, time, notes });
+    saveDB(); closeModal(); render();
+  });
+}
+function bindQuoteFormActions(){
+  bindItemInputs();
+  document.getElementById('cancelBtn').addEventListener('click', ()=>{ workingQuote=null; closeModal(); });
+  document.getElementById('addItemBtn').addEventListener('click', ()=>{
+    workingQuote.items.push({desc:'',qty:1,price:0}); refreshItemsUI();
+  });
+  document.getElementById('f_qclient').addEventListener('change', e=> workingQuote.clientId = e.target.value);
+  function persist(status){
+    workingQuote.clientId = document.getElementById('f_qclient').value;
+    workingQuote.status = status;
+    const idx = db.quotes.findIndex(q=>q.id===workingQuote.id);
+    if(idx>=0) db.quotes[idx] = workingQuote; else db.quotes.push(workingQuote);
+    saveDB(); workingQuote=null; closeModal(); render();
+  }
+  document.getElementById('saveDraftBtn').addEventListener('click', ()=> persist('draft'));
+  document.getElementById('sendQuoteBtn').addEventListener('click', ()=> persist('sent'));
+}
+function bindQuoteDetailActions(q){
+  document.getElementById('cancelBtn') && document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  const emailBtn = document.getElementById('emailQuoteBtn');
+  if(emailBtn) emailBtn.addEventListener('click', ()=>{ if(q.status==='draft'){ q.status='sent'; saveDB(); } });
+  const textBtn = document.getElementById('textQuoteBtn');
+  if(textBtn) textBtn.addEventListener('click', ()=>{ if(q.status==='draft'){ q.status='sent'; saveDB(); } });
+  const editBtn = document.getElementById('editQuoteBtn');
+  if(editBtn) editBtn.addEventListener('click', ()=>{ workingQuote = quoteFormState(q); openModal(quoteFormHtml()); bindQuoteFormActions(); });
+  const delBtn = document.getElementById('deleteQuoteBtn');
+  if(delBtn) delBtn.addEventListener('click', ()=>{ db.quotes = db.quotes.filter(x=>x.id!==q.id); saveDB(); closeModal(); render(); });
+  const paidBtn = document.getElementById('markPaidBtn');
+  if(paidBtn) paidBtn.addEventListener('click', ()=>{ q.status='paid'; saveDB(); closeModal(); render(); });
+  const sentBtn = document.getElementById('markSentBtn');
+  if(sentBtn) sentBtn.addEventListener('click', ()=>{ q.status='sent'; saveDB(); closeModal(); render(); });
+  const convBtn = document.getElementById('convertInvoiceBtn');
+  if(convBtn) convBtn.addEventListener('click', ()=>{ q.kind='invoice'; q.status='invoice'; saveDB(); closeModal(); render(); });
+}
+render();
+</script>
+</body>
+</html>
