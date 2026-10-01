@@ -161,16 +161,86 @@ function loadDB(){
 function defaultSettings(){
   return { businessName: '', email: 'lprimeshinel@gmail.com', phone: '647-637-9216' };
 }
-function saveDB(){
+// ---------- cloud sync state (Firebase module at the bottom fills this in) ----------
+const FF = window.FF = {
+  user:null, configured:false, status:'local', msg:'', push:null,
+  signIn:null, signUp:null, signOut:null, resetPw:null, prompted:false, dirty:false,
+  setStatus(st,msg){ this.status=st; this.msg=msg||''; updateSyncUI(); },
+  onUser(u){
+    this.user = u;
+    this.setStatus(u ? 'syncing' : 'signedout');
+    const modalOpen = document.getElementById('overlay').classList.contains('open');
+    if(!u && this.configured && !this.prompted && !modalOpen){
+      this.prompted = true; openModal(authForm()); bindAuthForm();
+    } else if(view==='settings' && !modalOpen){ render(); }
+  },
+  onRemote(exists, payload){
+    if(!this.user) return;
+    const fk = 'fieldflow_synced_' + this.user.uid;
+    let remote = null;
+    if(exists && payload){ try{ remote = JSON.parse(payload); }catch(e){} }
+    const first = !lsGet(fk), unsynced = !!lsGet('fieldflow_unsynced');
+    if(!remote){ lsSet(fk,'1'); pushNow(); return; }                    // nothing in the cloud yet: upload this device's data
+    if(first){                                                         // first time this device connects: merge, never lose local data
+      db = mergeDB(remote, db); lsSet(fk,'1'); writeLocal(); pushNow(); afterRemote(); return;
+    }
+    if(payload === JSON.stringify(db)){ lsDel('fieldflow_unsynced'); this.setStatus('synced'); return; }   // echo of our own save
+    if(unsynced){ pushNow(); return; }                                 // this device has newer offline edits
+    db = normalizeDB(remote); writeLocal(); this.setStatus('synced'); afterRemote();
+  }
+};
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+function normalizeDB(d){
+  d = d || {};
+  d.clients = d.clients || []; d.jobs = d.jobs || []; d.quotes = d.quotes || [];
+  d.services = d.services || []; d.settings = d.settings || defaultSettings();
+  return d;
+}
+function mergeDB(remote, local){
+  const out = normalizeDB(remote);
+  ['clients','jobs','quotes','services'].forEach(k=>{
+    const ids = new Set(out[k].map(x=>x.id));
+    const names = new Set(out[k].map(x=>(x.name||'').toLowerCase()));
+    (local[k]||[]).forEach(x=>{
+      if(ids.has(x.id)) return;
+      if(k==='services' && (x.seed || names.has((x.name||'').toLowerCase()))) return;
+      out[k].push(x);
+    });
+  });
+  return out;
+}
+function afterRemote(){
+  if(document.getElementById('overlay').classList.contains('open')) FF.dirty = true; else render();
+}
+function writeLocal(){
   try{ localStorage.setItem(DB_KEY, JSON.stringify(db)); }
   catch(e){ console.warn('storage write failed', e); }
 }
+let pushTimer = null;
+function saveDB(){
+  writeLocal();
+  lsSet('fieldflow_unsynced','1');
+  if(FF.user && FF.push){ FF.setStatus('syncing'); clearTimeout(pushTimer); pushTimer = setTimeout(pushNow, 600); }
+}
+async function pushNow(){
+  if(!(FF.user && FF.push)) return;
+  FF.setStatus('syncing');
+  const ok = await FF.push(JSON.stringify(db));
+  if(ok) lsDel('fieldflow_unsynced');
+}
+function syncLabel(){
+  return ({local:'Local only', loading:'☁ Connecting…', signedout:'☁ Not signed in', syncing:'☁ Syncing…',
+           synced:'☁ Synced', error:'⚠ Sync problem'})[FF.status] || '';
+}
+function updateSyncUI(){ document.querySelectorAll('.sync-label').forEach(el=> el.textContent = syncLabel()); }
 let db = loadDB();
 if(!db.settings) db.settings = defaultSettings();
 if(!db.services) db.services = [
-  {id:uid(), name:'Exterior Wash', price:40},
-  {id:uid(), name:'Interior Detail', price:80},
-  {id:uid(), name:'Full Detail (Sedan)', price:150}
+  {id:uid(), name:'Exterior Wash', price:40, seed:true},
+  {id:uid(), name:'Interior Detail', price:80, seed:true},
+  {id:uid(), name:'Full Detail (Sedan)', price:150, seed:true}
 ];
 let view = 'clients';
 let calMonth = new Date(); calMonth.setDate(1);
@@ -194,7 +264,7 @@ function setActiveNav(){
   document.querySelectorAll('#bottomnav button').forEach(b=> b.classList.toggle('active', b.dataset.view===view));
 }
 
-function closeModal(){ document.getElementById('overlay').classList.remove('open'); document.getElementById('modalBody').innerHTML=''; }
+function closeModal(){ document.getElementById('overlay').classList.remove('open'); document.getElementById('modalBody').innerHTML=''; if(FF.dirty){ FF.dirty=false; render(); } }
 function openModal(html){ document.getElementById('modalBody').innerHTML = html; document.getElementById('overlay').classList.add('open'); }
 document.getElementById('overlay').addEventListener('click', e=>{ if(e.target.id==='overlay') closeModal(); });
 
@@ -223,7 +293,7 @@ function renderClients(){
   }).join('');
   return `
     <div class="topline">
-      <div><h1>Clients</h1><div class="sub">${db.clients.length} client${db.clients.length===1?'':'s'}</div></div>
+      <div><h1>Clients</h1><div class="sub">${db.clients.length} client${db.clients.length===1?'':'s'} · <span class="sync-label">${syncLabel()}</span></div></div>
       <button class="btn" id="addClientBtn">+ Add client</button>
     </div>
     <div class="card">${rows || `<div class="empty"><b>No clients yet</b>Add your first client to start scheduling jobs and sending quotes.</div>`}</div>
@@ -369,6 +439,7 @@ function renderSettings(){
       <div class="meta" id="settingsSaved" style="margin-top:10px;height:16px;"></div>
     </div>
 
+    ${cloudCard()}
     <div class="topline" style="margin-top:28px;"><div><h2 style="margin:0;font-size:1.15rem;">Services & items</h2>
       <div class="sub">These appear as quick-fill dropdowns when booking jobs and building quotes</div></div></div>
     <div class="card" style="padding:20px;max-width:420px;">
@@ -386,6 +457,87 @@ function renderSettings(){
       <button class="btn" id="addServiceBtn" style="margin-top:4px;">+ Add service</button>
     </div>
   `;
+}
+
+function cloudCard(){
+  let body;
+  if(!FF.configured){
+    body = `<div class="meta">Cloud sync isn't set up yet. Paste your Firebase config into the <b>firebaseConfig</b> block at the bottom of this file, then reload.</div>`;
+  } else if(FF.user){
+    body = `<div class="meta">Signed in as <b>${esc(FF.user.email||'')}</b></div>
+      <div class="meta" style="margin-top:4px;">Status: <span class="sync-label">${syncLabel()}</span>${FF.msg?' — '+esc(FF.msg):''}</div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+        <button class="btn" id="cloudSyncBtn">Sync now</button>
+        <button class="btn ghost" id="cloudSignOutBtn">Sign out</button>
+      </div>`;
+  } else {
+    body = `<div class="meta">Sign in to keep your clients, jobs and quotes in sync on all your devices.</div>
+      <div class="meta" style="margin-top:4px;">Status: <span class="sync-label">${syncLabel()}</span>${FF.msg?' — '+esc(FF.msg):''}</div>
+      <button class="btn" id="cloudSignInBtn" style="margin-top:14px;">Sign in / Create account</button>`;
+  }
+  return `
+    <div class="topline" style="margin-top:28px;"><div><h2 style="margin:0;font-size:1.15rem;">Cloud sync</h2>
+      <div class="sub">Use the same login on your phone and computer</div></div></div>
+    <div class="card" style="padding:20px;max-width:420px;">${body}</div>`;
+}
+
+function authForm(){
+  return `
+    <h2>Sign in to sync</h2>
+    <div class="meta" style="margin-bottom:12px;">Use the same email and password on every device. New here? Enter an email and password and tap Create account.</div>
+    <div class="field"><label>Email</label><input id="a_email" type="email" autocomplete="email" placeholder="you@business.com"></div>
+    <div class="field"><label>Password</label><input id="a_pw" type="password" autocomplete="current-password" placeholder="At least 6 characters"></div>
+    <div class="meta" id="a_msg" style="min-height:18px;"></div>
+    <div class="modal-actions" style="flex-wrap:wrap;">
+      <button class="btn ghost" id="cancelBtn">Not now</button>
+      <button class="btn ghost" id="a_signup">Create account</button>
+      <button class="btn" id="a_signin">Sign in</button>
+    </div>
+    <div style="margin-top:10px;"><a href="#" id="a_reset" class="meta">Forgot password?</a></div>`;
+}
+function authMsg(e){
+  const c = (e && e.code) || '';
+  const m = {
+    'auth/invalid-email':'That email address looks invalid.',
+    'auth/missing-password':'Enter a password.',
+    'auth/weak-password':'Password must be at least 6 characters.',
+    'auth/email-already-in-use':'An account with that email already exists. Try Sign in.',
+    'auth/invalid-credential':'Wrong email or password.',
+    'auth/user-not-found':'No account with that email. Try Create account.',
+    'auth/wrong-password':'Wrong email or password.',
+    'auth/too-many-requests':'Too many attempts. Try again in a few minutes.',
+    'auth/network-request-failed':'Network problem. Check your connection.',
+    'auth/operation-not-allowed':'Email/password sign-in is not enabled in your Firebase project yet.',
+    'auth/unauthorized-domain':'This website address is not in your Firebase authorized domains.'
+  };
+  return m[c] || ('Something went wrong (' + (c || (e && e.message) || 'unknown') + ').');
+}
+function bindAuthForm(){
+  const msg = document.getElementById('a_msg');
+  const say = (t, bad)=>{ msg.style.color = bad ? 'var(--red)' : 'var(--ink-soft)'; msg.textContent = t; };
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  async function run(kind){
+    const email = document.getElementById('a_email').value.trim();
+    const pw = document.getElementById('a_pw').value;
+    if(!email || !pw){ say('Enter your email and password.', true); return; }
+    const fn = kind==='up' ? FF.signUp : FF.signIn;
+    if(!fn){ say('Still connecting to Firebase. Try again in a moment.', true); return; }
+    say('Working…');
+    try{ await fn(email, pw); closeModal(); }
+    catch(e){ say(authMsg(e), true); }
+  }
+  document.getElementById('a_signin').addEventListener('click', ()=> run('in'));
+  document.getElementById('a_signup').addEventListener('click', ()=> run('up'));
+  document.getElementById('a_pw').addEventListener('keydown', e=>{ if(e.key==='Enter') run('in'); });
+  document.getElementById('a_reset').addEventListener('click', async e=>{
+    e.preventDefault();
+    const email = document.getElementById('a_email').value.trim();
+    if(!email){ say('Type your email above first.', true); return; }
+    if(!FF.resetPw){ say('Still connecting to Firebase.', true); return; }
+    try{ await FF.resetPw(email); say('Password reset email sent.'); }
+    catch(err){ say(authMsg(err), true); }
+  });
+  const first = document.getElementById('a_email'); if(first) first.focus();
 }
 
 // ================= QUOTES / INVOICES =================
@@ -572,6 +724,13 @@ function attachHandlers(){
     msg.textContent = 'Saved.'; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2000);
   });
 
+  const siBtn = document.getElementById('cloudSignInBtn');
+  if(siBtn) siBtn.addEventListener('click', ()=>{ openModal(authForm()); bindAuthForm(); });
+  const soBtn = document.getElementById('cloudSignOutBtn');
+  if(soBtn) soBtn.addEventListener('click', ()=>{ if(FF.signOut) FF.signOut(); });
+  const syBtn = document.getElementById('cloudSyncBtn');
+  if(syBtn) syBtn.addEventListener('click', pushNow);
+
   const addSvcBtn = document.getElementById('addServiceBtn');
   if(addSvcBtn){
     addSvcBtn.addEventListener('click', ()=>{
@@ -585,9 +744,9 @@ function attachHandlers(){
       const sv = db.services.find(x=>x.id===row.dataset.svc);
       row.querySelector('.svc-name').addEventListener('change', e=>{
         const v = e.target.value.trim();
-        if(v){ sv.name = v; saveDB(); } else e.target.value = sv.name;
+        if(v){ sv.name = v; delete sv.seed; saveDB(); } else e.target.value = sv.name;
       });
-      row.querySelector('.svc-price').addEventListener('change', e=>{ sv.price = Number(e.target.value)||0; saveDB(); });
+      row.querySelector('.svc-price').addEventListener('change', e=>{ sv.price = Number(e.target.value)||0; delete sv.seed; saveDB(); });
       row.querySelector('.svc-del').addEventListener('click', ()=>{ db.services = db.services.filter(x=>x.id!==sv.id); saveDB(); render(); });
     });
   }
@@ -704,6 +863,67 @@ function bindQuoteDetailActions(q){
 }
 
 render();
+</script>
+
+<!-- ============ FIREBASE CLOUD SYNC ============ -->
+<script type="module">
+  // 1) Paste your own config here (Firebase Console > Project settings > Your apps > Web app > SDK setup and configuration)
+  const firebaseConfig = {
+    apiKey: "AIzaSyCj_RxGzj2aCEC7vSfxW4QiyEvDRU27RAM",
+    authDomain: "client-invoice-6a891.firebaseapp.com",
+    projectId: "client-invoice-6a891",
+    storageBucket: "client-invoice-6a891.firebasestorage.app",
+    messagingSenderId: "1056307297503",
+    appId: "1:1056307297503:web:a9d54e5ba5ad82ac293d6a",
+    measurementId: "G-9N56FEW9XV"
+  };
+
+  const FF = window.FF;
+  const base = "https://www.gstatic.com/firebasejs/10.12.2/";
+
+  (async ()=>{
+    if(!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_")){
+      FF.configured = false; FF.setStatus('local'); return;   // app keeps working with this device's storage only
+    }
+    FF.configured = true; FF.setStatus('loading');
+    try{
+      const [appM, authM, fsM] = await Promise.all([
+        import(base + "firebase-app.js"),
+        import(base + "firebase-auth.js"),
+        import(base + "firebase-firestore.js")
+      ]);
+      const app = appM.initializeApp(firebaseConfig);
+      const auth = authM.getAuth(app);
+      const fs = fsM.getFirestore(app);
+
+      FF.signIn  = (email, pw)=> authM.signInWithEmailAndPassword(auth, email, pw);
+      FF.signUp  = (email, pw)=> authM.createUserWithEmailAndPassword(auth, email, pw);
+      FF.signOut = ()=> authM.signOut(auth);
+      FF.resetPw = (email)=> authM.sendPasswordResetEmail(auth, email);
+
+      let unsub = null;
+      authM.onAuthStateChanged(auth, user=>{
+        if(unsub){ unsub(); unsub = null; }
+        if(!user){ FF.push = null; FF.onUser(null); return; }
+        // Each account's data lives in its own document: users/{uid}
+        const ref = fsM.doc(fs, "users", user.uid);
+        FF.push = async (payload)=>{
+          try{
+            await fsM.setDoc(ref, { payload, updatedAt: fsM.serverTimestamp() });
+            FF.setStatus('synced'); return true;
+          }catch(e){ console.error("Cloud save failed:", e); FF.setStatus('error', e.code || e.message); return false; }
+        };
+        FF.onUser({ uid: user.uid, email: user.email });
+        unsub = fsM.onSnapshot(ref, snap=>{
+          if(snap.metadata.hasPendingWrites) return;
+          FF.onRemote(snap.exists(), snap.exists() ? snap.data().payload : null);
+        }, err=>{ console.error("Cloud read failed:", err); FF.setStatus('error', err.code || err.message); });
+      });
+    }catch(e){
+      console.error("Firebase failed to load:", e);
+      FF.setStatus('error', 'Could not reach Firebase');
+    }
+  })();
 </script>
 </body>
 </html>
