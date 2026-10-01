@@ -110,6 +110,9 @@
   .totals .trow{display:flex;justify-content:space-between;padding:3px 0;color:var(--ink-soft);}
   .totals .trow.grand{color:var(--ink);font-weight:800;font-size:1.05rem;border-top:1px solid var(--line);margin-top:4px;padding-top:8px;}
 
+  .svc-row{display:grid;grid-template-columns:1fr 90px 26px;gap:8px;align-items:center;margin-bottom:8px;}
+  .svc-row input,.it-pick{padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.85rem;width:100%;}
+  .it-desc-wrap{display:flex;flex-direction:column;gap:5px;min-width:0;}
   .bottomnav{display:none;}
   @media (max-width: 760px){
     .sidebar{display:none;}
@@ -164,11 +167,20 @@ function saveDB(){
 }
 let db = loadDB();
 if(!db.settings) db.settings = defaultSettings();
+if(!db.services) db.services = [
+  {id:uid(), name:'Exterior Wash', price:40},
+  {id:uid(), name:'Interior Detail', price:80},
+  {id:uid(), name:'Full Detail (Sedan)', price:150}
+];
 let view = 'clients';
 let calMonth = new Date(); calMonth.setDate(1);
 let quoteFilter = 'all';
 
 function uid(){ return Math.random().toString(36).slice(2,9); }
+function serviceOptions(){
+  return '<option value="">Choose a service…</option>' +
+    db.services.map(sv=>`<option value="${sv.id}">${esc(sv.name)}${sv.price?' — '+fmt(sv.price):''}</option>`).join('');
+}
 function fmt(n){ return '$' + (Number(n)||0).toFixed(2); }
 function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -316,7 +328,10 @@ function jobForm(prefillDate){
     <h2>New job</h2>
     ${db.clients.length===0?'<div class="meta" style="margin-bottom:10px;">Add a client first.</div>':''}
     <div class="field"><label>Client</label><select id="f_client">${opts}</select></div>
-    <div class="field"><label>Job title</label><input id="f_title" placeholder="e.g. Full Detail (Sedan)"></div>
+    <div class="field"><label>Job title</label>
+      <select id="f_service" style="margin-bottom:6px;">${serviceOptions()}</select>
+      <input id="f_title" placeholder="Pick a service above or type your own">
+    </div>
     <div class="row2">
       <div class="field"><label>Date</label><input type="date" id="f_date" value="${prefillDate||''}"></div>
       <div class="field"><label>Time</label><input type="time" id="f_time" value="09:00"></div>
@@ -352,6 +367,23 @@ function renderSettings(){
       <div class="field"><label>Sends from this phone</label><input id="s_phone" value="${esc(s.phone)}" placeholder="(555) 555-1234"></div>
       <button class="btn" id="saveSettingsBtn" style="margin-top:6px;">Save settings</button>
       <div class="meta" id="settingsSaved" style="margin-top:10px;height:16px;"></div>
+    </div>
+
+    <div class="topline" style="margin-top:28px;"><div><h2 style="margin:0;font-size:1.15rem;">Services & items</h2>
+      <div class="sub">These appear as quick-fill dropdowns when booking jobs and building quotes</div></div></div>
+    <div class="card" style="padding:20px;max-width:420px;">
+      ${db.services.length ? db.services.map(sv=>`
+        <div class="svc-row" data-svc="${sv.id}">
+          <input class="svc-name" value="${esc(sv.name)}">
+          <input class="svc-price" type="number" min="0" step="0.01" value="${sv.price||0}">
+          <button class="rm svc-del" title="Remove">✕</button>
+        </div>`).join('') : '<div class="meta" style="margin-bottom:10px;">No services yet. Add your first below.</div>'}
+      <div class="svc-row" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
+        <input id="new_svc_name" placeholder="New service name">
+        <input id="new_svc_price" type="number" min="0" step="0.01" placeholder="Price">
+        <span></span>
+      </div>
+      <button class="btn" id="addServiceBtn" style="margin-top:4px;">+ Add service</button>
     </div>
   `;
 }
@@ -396,13 +428,7 @@ let workingQuote = null;
 function quoteFormHtml(){
   const q = workingQuote;
   const opts = db.clients.map(c=>`<option value="${c.id}" ${c.id===q.clientId?'selected':''}>${esc(c.name)}</option>`).join('');
-  const itemsHtml = q.items.map((it,i)=>`
-    <div class="li-row" data-idx="${i}">
-      <input class="it-desc" placeholder="Description" value="${esc(it.desc)}">
-      <input class="it-qty" type="number" min="0" placeholder="Qty" value="${it.qty}">
-      <input class="it-price" type="number" min="0" step="0.01" placeholder="Price" value="${it.price}">
-      <button class="rm" data-rm="${i}">✕</button>
-    </div>`).join('');
+  const itemsHtml = lineItemsHtml();
   const total = quoteTotal(q);
   return `
     <h2>${q.num?('#'+q.num+' — '):''}${q.kind==='invoice'?'Invoice':'Quote'}</h2>
@@ -420,20 +446,33 @@ function quoteFormHtml(){
     </div>`;
 }
 
-function refreshItemsUI(){
-  document.getElementById('itemsWrap').innerHTML = workingQuote.items.map((it,i)=>`
+function lineItemsHtml(){
+  return workingQuote.items.map((it,i)=>`
     <div class="li-row" data-idx="${i}">
-      <input class="it-desc" placeholder="Description" value="${esc(it.desc)}">
+      <div class="it-desc-wrap">
+        <select class="it-pick">${serviceOptions()}</select>
+        <input class="it-desc" placeholder="Description" value="${esc(it.desc)}">
+      </div>
       <input class="it-qty" type="number" min="0" placeholder="Qty" value="${it.qty}">
       <input class="it-price" type="number" min="0" step="0.01" placeholder="Price" value="${it.price}">
       <button class="rm" data-rm="${i}">✕</button>
     </div>`).join('');
+}
+function refreshItemsUI(){
+  document.getElementById('itemsWrap').innerHTML = lineItemsHtml();
   bindItemInputs();
   document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote));
 }
 function bindItemInputs(){
   document.querySelectorAll('#itemsWrap .li-row').forEach(row=>{
     const idx = +row.dataset.idx;
+    row.querySelector('.it-pick').addEventListener('change', e=>{
+      const sv = db.services.find(x=>x.id===e.target.value);
+      if(!sv) return;
+      workingQuote.items[idx].desc = sv.name;
+      workingQuote.items[idx].price = sv.price || 0;
+      refreshItemsUI();
+    });
     row.querySelector('.it-desc').addEventListener('input', e=> workingQuote.items[idx].desc = e.target.value);
     row.querySelector('.it-qty').addEventListener('input', e=>{ workingQuote.items[idx].qty = e.target.value; document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote)); });
     row.querySelector('.it-price').addEventListener('input', e=>{ workingQuote.items[idx].price = e.target.value; document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote)); });
@@ -533,6 +572,26 @@ function attachHandlers(){
     msg.textContent = 'Saved.'; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2000);
   });
 
+  const addSvcBtn = document.getElementById('addServiceBtn');
+  if(addSvcBtn){
+    addSvcBtn.addEventListener('click', ()=>{
+      const nameEl = document.getElementById('new_svc_name');
+      const name = nameEl.value.trim();
+      if(!name){ nameEl.style.borderColor='var(--red)'; nameEl.focus(); return; }
+      db.services.push({ id: uid(), name, price: Number(document.getElementById('new_svc_price').value)||0 });
+      saveDB(); render();
+    });
+    document.querySelectorAll('.svc-row[data-svc]').forEach(row=>{
+      const sv = db.services.find(x=>x.id===row.dataset.svc);
+      row.querySelector('.svc-name').addEventListener('change', e=>{
+        const v = e.target.value.trim();
+        if(v){ sv.name = v; saveDB(); } else e.target.value = sv.name;
+      });
+      row.querySelector('.svc-price').addEventListener('change', e=>{ sv.price = Number(e.target.value)||0; saveDB(); });
+      row.querySelector('.svc-del').addEventListener('click', ()=>{ db.services = db.services.filter(x=>x.id!==sv.id); saveDB(); render(); });
+    });
+  }
+
   // Quotes view
   const addQuoteBtn = document.getElementById('addQuoteBtn');
   if(addQuoteBtn) addQuoteBtn.addEventListener('click', ()=>{
@@ -590,6 +649,11 @@ function bindClientDetailActions(c){
 
 function bindJobFormActions(existing){
   document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  const svcSel = document.getElementById('f_service');
+  if(svcSel) svcSel.addEventListener('change', ()=>{
+    const sv = db.services.find(x=>x.id===svcSel.value);
+    if(sv) document.getElementById('f_title').value = sv.name;
+  });
   const saveBtn = document.getElementById('saveJobBtn');
   if(saveBtn) saveBtn.addEventListener('click', ()=>{
     const clientId = document.getElementById('f_client').value;
