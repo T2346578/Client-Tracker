@@ -1,72 +1,1002 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Prime Shine - Receipt</title>
-    <meta name="color-scheme" content="light dark" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body class="bg-slate-950 text-slate-100">
-    <div class="min-h-dvh">
-      <div class="mx-auto max-w-6xl px-4 py-6">
-        <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 class="text-2xl font-semibold tracking-tight">Receipt</h1>
-            <p class="text-sm text-slate-300">
-              Tracks clients, jobs, invoices, and totals. Print invoices to PDF.
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <button id="exportBtn" class="btn btn-secondary">Export</button>
-            <label class="btn btn-secondary cursor-pointer">
-              Import
-              <input id="importFile" type="file" accept="application/json" class="hidden" />
-            </label>
-            <button id="printBtn" class="btn btn-secondary hidden">Print invoice</button>
-          </div>
-        </header>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FieldFlow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F6F5F0; --card:#FFFFFF; --ink:#152522; --ink-soft:#5B6B65;
+    --line:#E2DFD4; --green:#2F6B47; --green-dark:#204E34; --green-soft:#E7F0E9;
+    --red:#B3462C; --gold:#B8862E;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12181A; --card:#1A2224; --ink:#EDEFEC; --ink-soft:#9FB0AC;
+      --line:#2A3436; --green:#5AAE7B; --green-dark:#3D7A57; --green-soft:#1E2E25;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12181A; --card:#1A2224; --ink:#EDEFEC; --ink-soft:#9FB0AC;
+    --line:#2A3436; --green:#5AAE7B; --green-dark:#3D7A57; --green-soft:#1E2E25;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  body{margin:0;font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink);}
+  #app{display:flex;min-height:100%;}
 
-        <div class="mt-6 grid gap-4 lg:grid-cols-[240px_1fr]">
-          <nav class="card p-3">
-            <div class="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-              Menu
-            </div>
-            <div class="flex flex-col gap-1">
-              <a class="navlink" href="#/dashboard" data-route="dashboard">Dashboard</a>
-              <a class="navlink" href="#/clients" data-route="clients">Clients</a>
-              <a class="navlink" href="#/invoices" data-route="invoices">Invoices</a>
-              <a class="navlink" href="#/receipts" data-route="receipts">Receipts</a>
-              <a class="navlink" href="#/settings" data-route="settings">Settings</a>
-            </div>
-            <div class="mt-3 border-t border-white/10 pt-3">
-              <div class="px-2 text-xs text-slate-400">
-                Data is saved on this device.
-              </div>
-            </div>
-          </nav>
+  /* Sidebar */
+  .sidebar{width:220px;flex-shrink:0;background:var(--card);border-right:1px solid var(--line);
+    padding:20px 14px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;}
+  .brand{font-weight:800;font-size:1.15rem;letter-spacing:-0.02em;padding:6px 10px 18px;color:var(--ink);}
+  .brand span{color:var(--green);}
+  .navbtn{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;border:none;
+    background:transparent;color:var(--ink-soft);font-size:0.95rem;font-weight:600;cursor:pointer;text-align:left;width:100%;}
+  .navbtn:hover{background:var(--green-soft);color:var(--ink);}
+  .navbtn.active{background:var(--green-dark);color:#fff;}
+  .navbtn .ic{width:18px;text-align:center;}
 
-          <main class="min-w-0">
-            <section id="view-dashboard" class="view"></section>
-            <section id="view-clients" class="view hidden"></section>
-            <section id="view-invoices" class="view hidden"></section>
-            <section id="view-receipts" class="view hidden"></section>
-            <section id="view-settings" class="view hidden"></section>
-            <section id="view-invoice-print" class="view hidden"></section>
-          </main>
+  .main{flex:1;min-width:0;padding:28px 32px 90px;max-width:980px;}
+  .topline{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:22px;gap:12px;flex-wrap:wrap;}
+  h1{font-size:1.5rem;margin:0;letter-spacing:-0.01em;}
+  .sub{color:var(--ink-soft);font-size:0.9rem;margin-top:4px;}
+
+  .btn{background:var(--green);color:#fff;border:none;padding:10px 16px;border-radius:8px;font-weight:600;
+    font-size:0.9rem;cursor:pointer;font-family:inherit;}
+  .btn:hover{background:var(--green-dark);}
+  .btn.ghost{background:transparent;color:var(--green);border:1px solid var(--line);}
+  .btn.ghost:hover{background:var(--green-soft);}
+  .btn.small{padding:6px 11px;font-size:0.82rem;}
+  .btn.danger{background:transparent;color:var(--red);border:1px solid var(--line);}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;}
+  .list-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);gap:10px;}
+  .list-row:last-child{border-bottom:none;}
+  .list-row:hover{background:var(--green-soft);cursor:pointer;}
+  .name{font-weight:700;font-size:0.98rem;}
+  .meta{color:var(--ink-soft);font-size:0.82rem;margin-top:2px;}
+  .paid{font-weight:700;color:var(--green-dark);white-space:nowrap;}
+
+  .empty{padding:50px 20px;text-align:center;color:var(--ink-soft);}
+  .empty b{color:var(--ink);display:block;margin-bottom:6px;font-size:1.05rem;}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(10,15,13,0.45);display:none;align-items:flex-start;justify-content:center;
+    z-index:50;padding:40px 16px;overflow-y:auto;}
+  .overlay.open{display:flex;}
+  .modal{background:var(--card);border-radius:14px;max-width:460px;width:100%;padding:22px;border:1px solid var(--line);}
+  .modal h2{margin:0 0 16px;font-size:1.15rem;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:0.78rem;color:var(--ink-soft);margin-bottom:4px;font-weight:600;}
+  .field input,.field select,.field textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;
+    background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.92rem;}
+  .field textarea{resize:vertical;min-height:60px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+
+  /* schedule */
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .cal-head .navarrows button{background:none;border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;color:var(--ink);font-size:0.95rem;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+  .cal-dow{font-size:0.72rem;color:var(--ink-soft);text-align:center;font-weight:700;padding-bottom:4px;}
+  .cal-cell{min-height:78px;border:1px solid var(--line);border-radius:8px;padding:5px;font-size:0.75rem;background:var(--card);}
+  .cal-cell.other{opacity:0.35;}
+  .cal-cell.today{border-color:var(--green);}
+  .cal-daynum{font-weight:700;margin-bottom:3px;}
+  .appt{background:var(--green-soft);color:var(--green-dark);border-radius:5px;padding:2px 5px;margin-bottom:2px;font-size:0.68rem;
+    font-weight:600;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  /* quotes */
+  .tabbtn{padding:6px 13px;border-radius:20px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);
+    font-size:0.8rem;font-weight:600;cursor:pointer;}
+  .tabbtn.active{background:var(--green-dark);color:#fff;border-color:var(--green-dark);}
+  .status-pill{font-size:0.68rem;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+  .status-draft{background:#EDEAE0;color:#6B6650;}
+  .status-sent{background:#FBF0DA;color:var(--gold);}
+  .status-invoice{background:#E2ECFB;color:#2E5FB8;}
+  .status-paid{background:var(--green-soft);color:var(--green-dark);}
+
+  .li-row{display:grid;grid-template-columns:1fr 70px 90px 26px;gap:8px;align-items:center;margin-bottom:8px;}
+  .li-row input{padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.85rem;}
+  .rm{background:none;border:none;color:var(--red);cursor:pointer;font-size:1.05rem;}
+  .totals{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:0.88rem;}
+  .totals .trow{display:flex;justify-content:space-between;padding:3px 0;color:var(--ink-soft);}
+  .totals .trow.grand{color:var(--ink);font-weight:800;font-size:1.05rem;border-top:1px solid var(--line);margin-top:4px;padding-top:8px;}
+
+  .svc-row{display:grid;grid-template-columns:1fr 90px 26px;gap:8px;align-items:center;margin-bottom:8px;}
+  .svc-row input,.it-pick{padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.85rem;width:100%;}
+  .it-desc-wrap{display:flex;flex-direction:column;gap:5px;min-width:0;}
+  .bottomnav{display:none;}
+  @media (max-width: 760px){
+    .sidebar{display:none;}
+    .main{padding:18px 14px 100px;max-width:100%;}
+    .bottomnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);
+      padding:8px 4px calc(8px + env(safe-area-inset-bottom,0px));z-index:40;}
+    .bottomnav button{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:3px;
+      color:var(--ink-soft);font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;}
+    .bottomnav button.active{color:var(--green-dark);}
+    .brand-mobile{font-weight:800;font-size:1.2rem;margin-bottom:16px;}
+    .brand-mobile span{color:var(--green);}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <nav class="sidebar" id="sidebar">
+    <div class="brand">Field<span>Flow</span></div>
+    <button class="navbtn" data-view="clients"><span class="ic">👤</span> Clients</button>
+    <button class="navbtn" data-view="schedule"><span class="ic">📅</span> Schedule</button>
+    <button class="navbtn" data-view="quotes"><span class="ic">🧾</span> Quotes & Invoices</button>
+    <div style="flex:1;"></div>
+    <button class="navbtn" data-view="settings"><span class="ic">⚙️</span> Settings</button>
+  </nav>
+  <main class="main" id="main"></main>
+</div>
+<nav class="bottomnav" id="bottomnav">
+  <button data-view="clients">👤<span>Clients</span></button>
+  <button data-view="schedule">📅<span>Schedule</span></button>
+  <button data-view="quotes">🧾<span>Quotes</span></button>
+  <button data-view="settings">⚙️<span>Settings</span></button>
+</nav>
+
+<div class="overlay" id="overlay"><div class="modal" id="modalBody"></div></div>
+
+<script>
+// ---------- storage ----------
+const DB_KEY = 'fieldflow_data_v1';
+function loadDB(){
+  try{
+    const raw = localStorage.getItem(DB_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){ console.warn('storage read failed', e); }
+  return { clients: [], jobs: [], quotes: [], settings: defaultSettings() };
+}
+function defaultSettings(){
+  return { businessName: '', email: 'lprimeshinel@gmail.com', phone: '647-637-9216' };
+}
+// ---------- cloud sync state (Firebase module at the bottom fills this in) ----------
+const FF = window.FF = {
+  user:null, configured:false, status:'local', msg:'', push:null,
+  signIn:null, signUp:null, signOut:null, resetPw:null, prompted:false, dirty:false,
+  setStatus(st,msg){ this.status=st; this.msg=msg||''; updateSyncUI(); },
+  onUser(u){
+    this.user = u;
+    this.setStatus(u ? 'syncing' : 'signedout');
+    const modalOpen = document.getElementById('overlay').classList.contains('open');
+    if(!u && this.configured && !this.prompted && !modalOpen){
+      this.prompted = true; openModal(authForm()); bindAuthForm();
+    } else if(view==='settings' && !modalOpen){ render(); }
+  },
+  onRemote(exists, payload){
+    if(!this.user) return;
+    const fk = 'fieldflow_synced_' + this.user.uid;
+    let remote = null;
+    if(exists && payload){ try{ remote = JSON.parse(payload); }catch(e){} }
+    const first = !lsGet(fk), unsynced = !!lsGet('fieldflow_unsynced');
+    if(!remote){ lsSet(fk,'1'); pushNow(); return; }                    // nothing in the cloud yet: upload this device's data
+    if(first){                                                         // first time this device connects: merge, never lose local data
+      db = mergeDB(remote, db); lsSet(fk,'1'); writeLocal(); pushNow(); afterRemote(); return;
+    }
+    if(payload === JSON.stringify(db)){ lsDel('fieldflow_unsynced'); this.setStatus('synced'); return; }   // echo of our own save
+    if(unsynced){ pushNow(); return; }                                 // this device has newer offline edits
+    db = normalizeDB(remote); writeLocal(); this.setStatus('synced'); afterRemote();
+  }
+};
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+function normalizeDB(d){
+  d = d || {};
+  d.clients = d.clients || []; d.jobs = d.jobs || []; d.quotes = d.quotes || [];
+  d.services = d.services || []; d.settings = d.settings || defaultSettings();
+  return d;
+}
+function mergeDB(remote, local){
+  const out = normalizeDB(remote);
+  ['clients','jobs','quotes','services'].forEach(k=>{
+    const ids = new Set(out[k].map(x=>x.id));
+    const names = new Set(out[k].map(x=>(x.name||'').toLowerCase()));
+    (local[k]||[]).forEach(x=>{
+      if(ids.has(x.id)) return;
+      if(k==='services' && (x.seed || names.has((x.name||'').toLowerCase()))) return;
+      out[k].push(x);
+    });
+  });
+  return out;
+}
+function afterRemote(){
+  if(document.getElementById('overlay').classList.contains('open')) FF.dirty = true; else render();
+}
+function writeLocal(){
+  try{ localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+  catch(e){ console.warn('storage write failed', e); }
+}
+let pushTimer = null;
+function saveDB(){
+  writeLocal();
+  lsSet('fieldflow_unsynced','1');
+  if(FF.user && FF.push){ FF.setStatus('syncing'); clearTimeout(pushTimer); pushTimer = setTimeout(pushNow, 600); }
+}
+async function pushNow(){
+  if(!(FF.user && FF.push)) return;
+  FF.setStatus('syncing');
+  const ok = await FF.push(JSON.stringify(db));
+  if(ok) lsDel('fieldflow_unsynced');
+}
+function syncLabel(){
+  return ({local:'Local only', loading:'☁ Connecting…', signedout:'☁ Not signed in', syncing:'☁ Syncing…',
+           synced:'☁ Synced', error:'⚠ Sync problem'})[FF.status] || '';
+}
+function updateSyncUI(){ document.querySelectorAll('.sync-label').forEach(el=> el.textContent = syncLabel()); }
+let db = loadDB();
+if(!db.settings) db.settings = defaultSettings();
+if(!db.services) db.services = [
+  {id:uid(), name:'Exterior Wash', price:40, seed:true},
+  {id:uid(), name:'Interior Detail', price:80, seed:true},
+  {id:uid(), name:'Full Detail (Sedan)', price:150, seed:true}
+];
+let view = 'clients';
+let calMonth = new Date(); calMonth.setDate(1);
+let quoteFilter = 'all';
+
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function serviceOptions(){
+  return '<option value="">Choose a service…</option>' +
+    db.services.map(sv=>`<option value="${sv.id}">${esc(sv.name)}${sv.price?' — '+fmt(sv.price):''}</option>`).join('');
+}
+function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso+'T00:00:00'); return isNaN(d)?iso:d.toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'}); }
+function fmt(n){ return '$' + (Number(n)||0).toFixed(2); }
+function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---------- nav ----------
+document.querySelectorAll('.navbtn,#bottomnav button').forEach(b=>{
+  b.addEventListener('click', ()=>{ view = b.dataset.view; render(); });
+});
+
+function setActiveNav(){
+  document.querySelectorAll('.navbtn').forEach(b=> b.classList.toggle('active', b.dataset.view===view));
+  document.querySelectorAll('#bottomnav button').forEach(b=> b.classList.toggle('active', b.dataset.view===view));
+}
+
+function closeModal(){ document.getElementById('overlay').classList.remove('open'); document.getElementById('modalBody').innerHTML=''; if(FF.dirty){ FF.dirty=false; render(); } }
+function openModal(html){ document.getElementById('modalBody').innerHTML = html; document.getElementById('overlay').classList.add('open'); }
+document.getElementById('overlay').addEventListener('click', e=>{ if(e.target.id==='overlay') closeModal(); });
+
+// ---------- render router ----------
+function render(){
+  setActiveNav();
+  const main = document.getElementById('main');
+  if(view==='clients') main.innerHTML = renderClients();
+  else if(view==='schedule') main.innerHTML = renderSchedule();
+  else if(view==='settings') main.innerHTML = renderSettings();
+  else main.innerHTML = renderQuotes();
+  attachHandlers();
+}
+
+// ================= CLIENTS =================
+function renderClients(){
+  const rows = db.clients.map(c=>{
+    const paid = db.quotes.filter(q=>q.clientId===c.id && q.status==='paid').reduce((s,q)=>s+quoteTotal(q),0);
+    return `<div class="list-row" data-client="${c.id}">
+      <div>
+        <div class="name">${esc(c.name)}</div>
+        <div class="meta">${esc(c.address)||'No address'} · ${esc(c.phone)||'—'} · ${esc(c.email)||'—'}</div>
+      </div>
+      <div class="paid">${fmt(paid)}</div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="topline">
+      <div><h1>Clients</h1><div class="sub">${db.clients.length} client${db.clients.length===1?'':'s'} · <span class="sync-label">${syncLabel()}</span></div></div>
+      <button class="btn" id="addClientBtn">+ Add client</button>
+    </div>
+    <div class="card">${rows || `<div class="empty"><b>No clients yet</b>Add your first client to start scheduling jobs and sending quotes.</div>`}</div>
+  `;
+}
+
+function clientForm(existing){
+  const c = existing || {name:'',address:'',phone:'',email:''};
+  return `
+    <h2>${existing?'Edit client':'Add client'}</h2>
+    <div class="field"><label>Full name</label><input id="f_name" value="${esc(c.name)}" placeholder="Jane Doe"></div>
+    <div class="field"><label>Address</label><input id="f_address" value="${esc(c.address)}" placeholder="123 Main St, City"></div>
+    <div class="row2">
+      <div class="field"><label>Phone</label><input id="f_phone" value="${esc(c.phone)}" placeholder="(555) 555-1234"></div>
+      <div class="field"><label>Email</label><input id="f_email" value="${esc(c.email)}" placeholder="jane@email.com"></div>
+    </div>
+    <div class="modal-actions">
+      ${existing?'<button class="btn danger" id="deleteClientBtn">Delete</button>':''}
+      <button class="btn ghost" id="cancelBtn">Cancel</button>
+      <button class="btn" id="saveClientBtn">${existing?'Save changes':'Add client'}</button>
+    </div>`;
+}
+
+function clientDetail(c){
+  const cq = db.quotes.filter(q=>q.clientId===c.id);
+  const cj = db.jobs.filter(j=>j.clientId===c.id);
+  const paid = cq.filter(q=>q.status==='paid').reduce((s,q)=>s+quoteTotal(q),0);
+  return `
+    <h2>${esc(c.name)}</h2>
+    <div class="field"><div class="meta">${esc(c.address)||'No address'}</div>
+    <div class="meta">${esc(c.phone)||'No phone'} · ${esc(c.email)||'No email'}</div></div>
+    <div class="totals"><div class="trow grand"><span>Total paid</span><span>${fmt(paid)}</span></div></div>
+    <div style="margin-top:14px;">
+      <div class="meta" style="font-weight:700;margin-bottom:6px;">Jobs (${cj.length})</div>
+      ${cj.length ? cj.map(j=>`<div class="meta">${j.date} — ${esc(j.title)}</div>`).join('') : '<div class="meta">No jobs scheduled.</div>'}
+    </div>
+    <div style="margin-top:12px;">
+      <div class="meta" style="font-weight:700;margin-bottom:6px;">Quotes/Invoices (${cq.length})</div>
+      ${cq.length ? cq.map(q=>`<div class="meta">#${q.num} · ${fmt(quoteTotal(q))} · ${q.status}</div>`).join('') : '<div class="meta">None yet.</div>'}
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="cancelBtn">Close</button>
+      <button class="btn ghost" id="editClientBtn">Edit</button>
+      <button class="btn" id="newQuoteForClientBtn">+ New quote / invoice</button>
+    </div>`;
+}
+
+// ================= SCHEDULE =================
+function renderSchedule(){
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  const first = new Date(y,m,1);
+  const startDow = first.getDay();
+  const daysInMonth = new Date(y,m+1,0).getDate();
+  const daysInPrev = new Date(y,m,0).getDate();
+  const cells = [];
+  for(let i=startDow-1;i>=0;i--) cells.push({d:daysInPrev-i, other:true});
+  for(let d=1; d<=daysInMonth; d++) cells.push({d, other:false, y, m});
+  while(cells.length % 7 !== 0 || cells.length < 35) cells.push({d:cells.length, other:true});
+  const today = new Date();
+  const monthLabel = calMonth.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  const dows = ['S','M','T','W','T','F','S'];
+
+  const cellsHtml = cells.map(c=>{
+    const isToday = !c.other && c.y===today.getFullYear() && c.m===today.getMonth() && c.d===today.getDate();
+    let apptsHtml = '';
+    if(!c.other){
+      const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(c.d).padStart(2,'0')}`;
+      const dayJobs = db.jobs.filter(j=>j.date===dateStr);
+      apptsHtml = dayJobs.map(j=>{
+        const client = db.clients.find(cl=>cl.id===j.clientId);
+        return `<div class="appt" data-job="${j.id}">${esc((client&&client.name)||j.title)}</div>`;
+      }).join('');
+    }
+    return `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''}" ${!c.other?`data-day="${c.d}"`:''}>
+      <div class="cal-daynum">${c.d}</div>${apptsHtml}</div>`;
+  }).join('');
+
+  return `
+    <div class="topline">
+      <div><h1>Schedule</h1><div class="sub">Tap a day to book a job</div></div>
+      <button class="btn" id="addJobBtn">+ New job</button>
+    </div>
+    <div class="card" style="padding:16px;">
+      <div class="cal-head">
+        <div class="navarrows" style="display:flex;gap:8px;">
+          <button id="prevMonth">‹</button><button id="nextMonth">›</button>
         </div>
+        <div style="font-weight:700;">${monthLabel}</div>
+        <div style="width:60px;"></div>
+      </div>
+      <div class="cal-grid">
+        ${dows.map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+        ${cellsHtml}
       </div>
     </div>
+  `;
+}
 
-    <div
-      id="toast"
-      class="pointer-events-none fixed bottom-5 left-1/2 z-50 hidden -translate-x-1/2 rounded-xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm shadow-xl backdrop-blur"
-    ></div>
+function jobForm(prefillDate){
+  const opts = db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  return `
+    <h2>New job</h2>
+    ${db.clients.length===0?'<div class="meta" style="margin-bottom:10px;">Add a client first.</div>':''}
+    <div class="field"><label>Client</label><select id="f_client">${opts}</select></div>
+    <div class="field"><label>Job title</label>
+      <select id="f_service" style="margin-bottom:6px;">${serviceOptions()}</select>
+      <input id="f_title" placeholder="Pick a service above or type your own">
+    </div>
+    <div class="row2">
+      <div class="field"><label>Date</label><input type="date" id="f_date" value="${prefillDate||''}"></div>
+      <div class="field"><label>Time</label><input type="time" id="f_time" value="09:00"></div>
+    </div>
+    <div class="field"><label>Notes</label><textarea id="f_notes" placeholder="Instructions for the crew"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="cancelBtn">Cancel</button>
+      <button class="btn" id="saveJobBtn" ${db.clients.length===0?'disabled':''}>Book job</button>
+    </div>`;
+}
 
-    <script defer src="./app.js"></script>
-  </body>
+function jobDetail(j){
+  const client = db.clients.find(c=>c.id===j.clientId);
+  return `
+    <h2>${esc(j.title)}</h2>
+    <div class="meta">${client?esc(client.name):'Unknown client'}</div>
+    <div class="meta">${j.date} at ${j.time||'—'}</div>
+    ${j.notes?`<div class="field" style="margin-top:10px;">${esc(j.notes)}</div>`:''}
+    <div class="modal-actions">
+      <button class="btn danger" id="deleteJobBtn">Delete</button>
+      <button class="btn ghost" id="cancelBtn">Close</button>
+    </div>`;
+}
+
+// ================= SETTINGS =================
+function renderSettings(){
+  const s = db.settings;
+  return `
+    <div class="topline"><div><h1>Settings</h1><div class="sub">This is what customers see when you email or text a quote</div></div></div>
+    <div class="card" style="padding:20px;max-width:420px;">
+      <div class="field"><label>Business name</label><input id="s_name" value="${esc(s.businessName)}" placeholder="Your Business Name"></div>
+      <div class="field"><label>Sends from this email</label><input id="s_email" value="${esc(s.email)}" placeholder="you@business.com"></div>
+      <div class="field"><label>Sends from this phone</label><input id="s_phone" value="${esc(s.phone)}" placeholder="(555) 555-1234"></div>
+      <button class="btn" id="saveSettingsBtn" style="margin-top:6px;">Save settings</button>
+      <div class="meta" id="settingsSaved" style="margin-top:10px;height:16px;"></div>
+    </div>
+
+    ${cloudCard()}
+    ${backupCard()}
+    <div class="topline" style="margin-top:28px;"><div><h2 style="margin:0;font-size:1.15rem;">Services & items</h2>
+      <div class="sub">These appear as quick-fill dropdowns when booking jobs and building quotes</div></div></div>
+    <div class="card" style="padding:20px;max-width:420px;">
+      ${db.services.length ? db.services.map(sv=>`
+        <div class="svc-row" data-svc="${sv.id}">
+          <input class="svc-name" value="${esc(sv.name)}">
+          <input class="svc-price" type="number" min="0" step="0.01" value="${sv.price||0}">
+          <button class="rm svc-del" title="Remove">✕</button>
+        </div>`).join('') : '<div class="meta" style="margin-bottom:10px;">No services yet. Add your first below.</div>'}
+      <div class="svc-row" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
+        <input id="new_svc_name" placeholder="New service name">
+        <input id="new_svc_price" type="number" min="0" step="0.01" placeholder="Price">
+        <span></span>
+      </div>
+      <button class="btn" id="addServiceBtn" style="margin-top:4px;">+ Add service</button>
+    </div>
+  `;
+}
+
+function backupCard(){
+  return `
+    <div class="topline" style="margin-top:28px;"><div><h2 style="margin:0;font-size:1.15rem;">Backup & import</h2>
+      <div class="sub">Save a copy of everything, or load clients and payments from a file</div></div></div>
+    <div class="card" style="padding:20px;max-width:420px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn" id="exportBtn">Export backup</button>
+        <button class="btn ghost" id="importBtn">Import file…</button>
+        <input type="file" id="importFile" accept="application/json,.json" style="display:none;">
+      </div>
+      <div class="meta" id="importMsg" style="margin-top:12px;min-height:16px;"></div>
+    </div>`;
+}
+function downloadBackup(){
+  const blob = new Blob([JSON.stringify(db,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'client-backup-' + todayISO() + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 1000);
+}
+function importData(d){
+  const ic = Array.isArray(d.clients)?d.clients:[], iq = Array.isArray(d.quotes)?d.quotes:[];
+  const map = {}; let addedC = 0, addedQ = 0, skippedQ = 0;
+  ic.forEach(c=>{
+    const nm = (c.name||'').trim().toLowerCase();
+    const ex = db.clients.find(x=>x.id===c.id) || db.clients.find(x=>(x.name||'').trim().toLowerCase()===nm);
+    if(ex){
+      ['phone','email','address'].forEach(k=>{ if(!ex[k] && c[k]) ex[k] = c[k]; });
+      map[c.id] = ex.id;
+    } else {
+      const nc = { id:c.id||uid(), name:c.name||'', address:c.address||'', phone:c.phone||'', email:c.email||'' };
+      db.clients.push(nc); map[c.id] = nc.id; addedC++;
+    }
+  });
+  let next = db.quotes.reduce((m,q)=>Math.max(m,q.num||0),0);
+  iq.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(q=>{
+    if(q.id && db.quotes.some(x=>x.id===q.id)){ skippedQ++; return; }
+    db.quotes.push({
+      id:q.id||uid(), num:q.num||++next, clientId:map[q.clientId]||q.clientId,
+      kind:q.kind||'quote', status:q.status||'draft', date:q.date||'',
+      items:(q.items||[]).map(it=>({desc:it.desc||'', qty:Number(it.qty)||1, price:Number(it.price)||0}))
+    });
+    addedQ++;
+  });
+  saveDB();
+  return { addedC, addedQ, skippedQ };
+}
+
+function cloudCard(){
+  let body;
+  if(!FF.configured){
+    body = `<div class="meta">Cloud sync isn't set up yet. Paste your Firebase config into the <b>firebaseConfig</b> block at the bottom of this file, then reload.</div>`;
+  } else if(FF.user){
+    body = `<div class="meta">Signed in as <b>${esc(FF.user.email||'')}</b></div>
+      <div class="meta" style="margin-top:4px;">Status: <span class="sync-label">${syncLabel()}</span>${FF.msg?' — '+esc(FF.msg):''}</div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+        <button class="btn" id="cloudSyncBtn">Sync now</button>
+        <button class="btn ghost" id="cloudSignOutBtn">Sign out</button>
+      </div>`;
+  } else {
+    body = `<div class="meta">Sign in to keep your clients, jobs and quotes in sync on all your devices.</div>
+      <div class="meta" style="margin-top:4px;">Status: <span class="sync-label">${syncLabel()}</span>${FF.msg?' — '+esc(FF.msg):''}</div>
+      <button class="btn" id="cloudSignInBtn" style="margin-top:14px;">Sign in / Create account</button>`;
+  }
+  return `
+    <div class="topline" style="margin-top:28px;"><div><h2 style="margin:0;font-size:1.15rem;">Cloud sync</h2>
+      <div class="sub">Use the same login on your phone and computer</div></div></div>
+    <div class="card" style="padding:20px;max-width:420px;">${body}</div>`;
+}
+
+function authForm(){
+  return `
+    <h2>Sign in to sync</h2>
+    <div class="meta" style="margin-bottom:12px;">Use the same email and password on every device. New here? Enter an email and password and tap Create account.</div>
+    <div class="field"><label>Email</label><input id="a_email" type="email" autocomplete="email" placeholder="you@business.com"></div>
+    <div class="field"><label>Password</label><input id="a_pw" type="password" autocomplete="current-password" placeholder="At least 6 characters"></div>
+    <div class="meta" id="a_msg" style="min-height:18px;"></div>
+    <div class="modal-actions" style="flex-wrap:wrap;">
+      <button class="btn ghost" id="cancelBtn">Not now</button>
+      <button class="btn ghost" id="a_signup">Create account</button>
+      <button class="btn" id="a_signin">Sign in</button>
+    </div>
+    <div style="margin-top:10px;"><a href="#" id="a_reset" class="meta">Forgot password?</a></div>`;
+}
+function authMsg(e){
+  const c = (e && e.code) || '';
+  const m = {
+    'auth/invalid-email':'That email address looks invalid.',
+    'auth/missing-password':'Enter a password.',
+    'auth/weak-password':'Password must be at least 6 characters.',
+    'auth/email-already-in-use':'An account with that email already exists. Try Sign in.',
+    'auth/invalid-credential':'Wrong email or password.',
+    'auth/user-not-found':'No account with that email. Try Create account.',
+    'auth/wrong-password':'Wrong email or password.',
+    'auth/too-many-requests':'Too many attempts. Try again in a few minutes.',
+    'auth/network-request-failed':'Network problem. Check your connection.',
+    'auth/operation-not-allowed':'Email/password sign-in is not enabled in your Firebase project yet.',
+    'auth/unauthorized-domain':'This website address is not in your Firebase authorized domains.'
+  };
+  return m[c] || ('Something went wrong (' + (c || (e && e.message) || 'unknown') + ').');
+}
+function bindAuthForm(){
+  const msg = document.getElementById('a_msg');
+  const say = (t, bad)=>{ msg.style.color = bad ? 'var(--red)' : 'var(--ink-soft)'; msg.textContent = t; };
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  async function run(kind){
+    const email = document.getElementById('a_email').value.trim();
+    const pw = document.getElementById('a_pw').value;
+    if(!email || !pw){ say('Enter your email and password.', true); return; }
+    const fn = kind==='up' ? FF.signUp : FF.signIn;
+    if(!fn){ say('Still connecting to Firebase. Try again in a moment.', true); return; }
+    say('Working…');
+    try{ await fn(email, pw); closeModal(); }
+    catch(e){ say(authMsg(e), true); }
+  }
+  document.getElementById('a_signin').addEventListener('click', ()=> run('in'));
+  document.getElementById('a_signup').addEventListener('click', ()=> run('up'));
+  document.getElementById('a_pw').addEventListener('keydown', e=>{ if(e.key==='Enter') run('in'); });
+  document.getElementById('a_reset').addEventListener('click', async e=>{
+    e.preventDefault();
+    const email = document.getElementById('a_email').value.trim();
+    if(!email){ say('Type your email above first.', true); return; }
+    if(!FF.resetPw){ say('Still connecting to Firebase.', true); return; }
+    try{ await FF.resetPw(email); say('Password reset email sent.'); }
+    catch(err){ say(authMsg(err), true); }
+  });
+  const first = document.getElementById('a_email'); if(first) first.focus();
+}
+
+// ================= QUOTES / INVOICES =================
+function quoteTotal(q){ return q.items.reduce((s,it)=> s + (Number(it.qty)||0)*(Number(it.price)||0), 0); }
+
+function renderQuotes(){
+  const filtered = quoteFilter==='all' ? db.quotes : db.quotes.filter(q=>q.status===quoteFilter);
+  const sorted = [...filtered].sort((a,b)=>b.num-a.num);
+  const rows = sorted.map(q=>{
+    const client = db.clients.find(c=>c.id===q.clientId);
+    return `<div class="list-row" data-quote="${q.id}">
+      <div>
+        <div class="name">#${q.num} — ${client?esc(client.name):'No client'}</div>
+        <div class="meta">${q.kind==='invoice'?'Invoice':'Quote'} · ${fmt(quoteTotal(q))}${q.date?' · '+fmtDate(q.date):''}</div>
+      </div>
+      <span class="status-pill status-${q.status}">${q.status}</span>
+    </div>`;
+  }).join('');
+  const tabs = ['all','draft','sent','invoice','paid'].map(s=>
+    `<button class="tabbtn ${quoteFilter===s?'active':''}" data-filter="${s}">${s[0].toUpperCase()+s.slice(1)}</button>`).join('');
+  return `
+    <div class="topline">
+      <div><h1>Quotes & Invoices</h1><div class="sub">${db.quotes.length} total</div></div>
+      <button class="btn" id="addQuoteBtn">+ New quote</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">${tabs}</div>
+    <div class="card">${rows || `<div class="empty"><b>No quotes yet</b>Create a quote to send pricing to a customer.</div>`}</div>
+  `;
+}
+
+function quoteFormState(existing){
+  return existing ? JSON.parse(JSON.stringify(existing)) : {
+    id: uid(), num: (db.quotes.reduce((m,q)=>Math.max(m,q.num),0)+1),
+    clientId: db.clients[0]?db.clients[0].id:'', kind:'quote', status:'draft', date: todayISO(),
+    items:[{desc:'',qty:1,price:0}]
+  };
+}
+let workingQuote = null;
+
+function quoteFormHtml(){
+  const q = workingQuote;
+  const opts = db.clients.map(c=>`<option value="${c.id}" ${c.id===q.clientId?'selected':''}>${esc(c.name)}</option>`).join('');
+  const itemsHtml = lineItemsHtml();
+  const total = quoteTotal(q);
+  return `
+    <h2>${q.num?('#'+q.num+' — '):''}${q.kind==='invoice'?'Invoice':'Quote'}</h2>
+    ${db.clients.length===0?'<div class="meta" style="margin-bottom:10px;">Add a client first.</div>':''}
+    <div class="field"><label>Client</label><select id="f_qclient">${opts}</select></div>
+    <div class="field"><label>Date</label><input id="f_qdate" type="date" value="${q.date||''}"></div>
+    <div class="field"><label>Line items</label>
+      <div id="itemsWrap">${itemsHtml}</div>
+      <button class="btn ghost small" id="addItemBtn">+ Add line item</button>
+    </div>
+    <div class="totals"><div class="trow grand"><span>Total</span><span id="qTotalDisplay">${fmt(total)}</span></div></div>
+    <div class="modal-actions" style="flex-wrap:wrap;">
+      <button class="btn ghost" id="cancelBtn">Cancel</button>
+      <button class="btn ghost" id="saveDraftBtn">Save draft</button>
+      <button class="btn" id="sendQuoteBtn" ${db.clients.length===0?'disabled':''}>Save & mark sent</button>
+    </div>`;
+}
+
+function lineItemsHtml(){
+  return workingQuote.items.map((it,i)=>`
+    <div class="li-row" data-idx="${i}">
+      <div class="it-desc-wrap">
+        <select class="it-pick">${serviceOptions()}</select>
+        <input class="it-desc" placeholder="Description" value="${esc(it.desc)}">
+      </div>
+      <input class="it-qty" type="number" min="0" placeholder="Qty" value="${it.qty}">
+      <input class="it-price" type="number" min="0" step="0.01" placeholder="Price" value="${it.price}">
+      <button class="rm" data-rm="${i}">✕</button>
+    </div>`).join('');
+}
+function refreshItemsUI(){
+  document.getElementById('itemsWrap').innerHTML = lineItemsHtml();
+  bindItemInputs();
+  document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote));
+}
+function bindItemInputs(){
+  document.querySelectorAll('#itemsWrap .li-row').forEach(row=>{
+    const idx = +row.dataset.idx;
+    row.querySelector('.it-pick').addEventListener('change', e=>{
+      const sv = db.services.find(x=>x.id===e.target.value);
+      if(!sv) return;
+      workingQuote.items[idx].desc = sv.name;
+      workingQuote.items[idx].price = sv.price || 0;
+      refreshItemsUI();
+    });
+    row.querySelector('.it-desc').addEventListener('input', e=> workingQuote.items[idx].desc = e.target.value);
+    row.querySelector('.it-qty').addEventListener('input', e=>{ workingQuote.items[idx].qty = e.target.value; document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote)); });
+    row.querySelector('.it-price').addEventListener('input', e=>{ workingQuote.items[idx].price = e.target.value; document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote)); });
+  });
+  document.querySelectorAll('#itemsWrap .rm').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ workingQuote.items.splice(+btn.dataset.rm,1); if(workingQuote.items.length===0) workingQuote.items.push({desc:'',qty:1,price:0}); refreshItemsUI(); });
+  });
+}
+
+function buildQuoteMessage(q, client){
+  const s = db.settings;
+  const kindLabel = q.kind==='invoice' ? 'Invoice' : 'Quote';
+  const from = s.businessName || 'us';
+  const lines = [
+    `Hi ${client?client.name:'there'},`, '',
+    `Here's your ${kindLabel.toLowerCase()} #${q.num} from ${from}.`, '',
+    ...q.items.map(it=>`- ${it.desc||'Item'} x${it.qty}: ${fmt((Number(it.qty)||0)*(Number(it.price)||0))}`),
+    '', `Total: ${fmt(quoteTotal(q))}`, '',
+    `Questions? Reach us at ${s.email}${s.phone?(' or '+s.phone):''}.`, '',
+    `Thanks,`, from
+  ];
+  return { subject: `${kindLabel} #${q.num} from ${from}`, body: lines.join('\n') };
+}
+
+function quoteDetail(q){
+  const client = db.clients.find(c=>c.id===q.clientId);
+  const itemsHtml = q.items.map(it=>`<div class="trow"><span>${esc(it.desc)||'Item'} × ${it.qty}</span><span>${fmt((Number(it.qty)||0)*(Number(it.price)||0))}</span></div>`).join('');
+  const msg = buildQuoteMessage(q, client);
+  const mailHref = client && client.email
+    ? `mailto:${encodeURIComponent(client.email)}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`
+    : null;
+  const smsHref = client && client.phone
+    ? `sms:${encodeURIComponent(client.phone)}?body=${encodeURIComponent(msg.subject+' — '+fmt(quoteTotal(q))+'. Details in your email, or call us at '+db.settings.phone+'.')}`
+    : null;
+  return `
+    <h2>#${q.num} for ${client?esc(client.name):'—'}</h2>
+    <span class="status-pill status-${q.status}">${q.status}</span>${q.date?` <span class="meta">${fmtDate(q.date)}</span>`:''}
+    <div class="totals" style="margin-top:12px;">${itemsHtml}<div class="trow grand"><span>Total</span><span>${fmt(quoteTotal(q))}</span></div></div>
+    <div class="modal-actions" style="flex-wrap:wrap;">
+      ${mailHref ? `<a class="btn ghost small" id="emailQuoteBtn" href="${mailHref}">Email quote</a>` : `<span class="meta">Add client email to send by email</span>`}
+      ${smsHref ? `<a class="btn ghost small" id="textQuoteBtn" href="${smsHref}">Text quote</a>` : ''}
+    </div>
+    <div class="modal-actions" style="flex-wrap:wrap;">
+      <button class="btn danger" id="deleteQuoteBtn">Delete</button>
+      <button class="btn ghost" id="editQuoteBtn">Edit</button>
+      ${q.status!=='paid' ? `<button class="btn" id="markPaidBtn">Mark paid</button>` : ''}
+      ${q.status==='draft' ? `<button class="btn" id="markSentBtn">Mark sent</button>` : ''}
+      ${(q.status==='sent') ? `<button class="btn" id="convertInvoiceBtn">Convert to invoice</button>` : ''}
+    </div>`;
+}
+
+// ---------- event wiring ----------
+function attachHandlers(){
+  // Clients view
+  const addClientBtn = document.getElementById('addClientBtn');
+  if(addClientBtn) addClientBtn.addEventListener('click', ()=>{ openModal(clientForm(null)); bindClientFormIfPresent(null); });
+  document.querySelectorAll('[data-client]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const c = db.clients.find(x=>x.id===row.dataset.client);
+      openModal(clientDetail(c));
+      bindClientDetailActions(c);
+    });
+  });
+
+  // Schedule view
+  const addJobBtn = document.getElementById('addJobBtn');
+  if(addJobBtn) addJobBtn.addEventListener('click', ()=>{ openModal(jobForm('')); bindJobFormActions(null); });
+  const prevM = document.getElementById('prevMonth'), nextM = document.getElementById('nextMonth');
+  if(prevM) prevM.addEventListener('click', ()=>{ calMonth.setMonth(calMonth.getMonth()-1); render(); });
+  if(nextM) nextM.addEventListener('click', ()=>{ calMonth.setMonth(calMonth.getMonth()+1); render(); });
+  document.querySelectorAll('.cal-cell[data-day]').forEach(cell=>{
+    cell.addEventListener('click', (e)=>{
+      if(e.target.closest('.appt')) return;
+      const y = calMonth.getFullYear(), m = calMonth.getMonth();
+      const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(cell.dataset.day).padStart(2,'0')}`;
+      openModal(jobForm(dateStr)); bindJobFormActions(null);
+    });
+  });
+  document.querySelectorAll('.appt').forEach(a=>{
+    a.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const j = db.jobs.find(x=>x.id===a.dataset.job);
+      openModal(jobDetail(j));
+      document.getElementById('deleteJobBtn').addEventListener('click', ()=>{ db.jobs = db.jobs.filter(x=>x.id!==j.id); saveDB(); closeModal(); render(); });
+      document.getElementById('cancelBtn').addEventListener('click', closeModal);
+    });
+  });
+
+  // Settings view
+  const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+  if(saveSettingsBtn) saveSettingsBtn.addEventListener('click', ()=>{
+    db.settings.businessName = document.getElementById('s_name').value.trim();
+    db.settings.email = document.getElementById('s_email').value.trim();
+    db.settings.phone = document.getElementById('s_phone').value.trim();
+    saveDB();
+    const msg = document.getElementById('settingsSaved');
+    msg.textContent = 'Saved.'; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2000);
+  });
+
+  const expBtn = document.getElementById('exportBtn');
+  if(expBtn) expBtn.addEventListener('click', downloadBackup);
+  const impBtn = document.getElementById('importBtn'), impFile = document.getElementById('importFile');
+  if(impBtn && impFile){
+    impBtn.addEventListener('click', ()=> impFile.click());
+    impFile.addEventListener('change', ()=>{
+      const f = impFile.files[0]; if(!f) return;
+      const msg = document.getElementById('importMsg');
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const r = importData(JSON.parse(reader.result));
+          msg.style.color = 'var(--green-dark)';
+          msg.textContent = `Imported ${r.addedC} new client(s) and ${r.addedQ} payment(s)` + (r.skippedQ ? ` (${r.skippedQ} already there, skipped)` : '') + '.';
+        }catch(e){ msg.style.color = 'var(--red)'; msg.textContent = 'That file could not be read.'; }
+        impFile.value = '';
+      };
+      reader.readAsText(f);
+    });
+  }
+  const siBtn = document.getElementById('cloudSignInBtn');
+  if(siBtn) siBtn.addEventListener('click', ()=>{ openModal(authForm()); bindAuthForm(); });
+  const soBtn = document.getElementById('cloudSignOutBtn');
+  if(soBtn) soBtn.addEventListener('click', ()=>{ if(FF.signOut) FF.signOut(); });
+  const syBtn = document.getElementById('cloudSyncBtn');
+  if(syBtn) syBtn.addEventListener('click', pushNow);
+
+  const addSvcBtn = document.getElementById('addServiceBtn');
+  if(addSvcBtn){
+    addSvcBtn.addEventListener('click', ()=>{
+      const nameEl = document.getElementById('new_svc_name');
+      const name = nameEl.value.trim();
+      if(!name){ nameEl.style.borderColor='var(--red)'; nameEl.focus(); return; }
+      db.services.push({ id: uid(), name, price: Number(document.getElementById('new_svc_price').value)||0 });
+      saveDB(); render();
+    });
+    document.querySelectorAll('.svc-row[data-svc]').forEach(row=>{
+      const sv = db.services.find(x=>x.id===row.dataset.svc);
+      row.querySelector('.svc-name').addEventListener('change', e=>{
+        const v = e.target.value.trim();
+        if(v){ sv.name = v; delete sv.seed; saveDB(); } else e.target.value = sv.name;
+      });
+      row.querySelector('.svc-price').addEventListener('change', e=>{ sv.price = Number(e.target.value)||0; delete sv.seed; saveDB(); });
+      row.querySelector('.svc-del').addEventListener('click', ()=>{ db.services = db.services.filter(x=>x.id!==sv.id); saveDB(); render(); });
+    });
+  }
+
+  // Quotes view
+  const addQuoteBtn = document.getElementById('addQuoteBtn');
+  if(addQuoteBtn) addQuoteBtn.addEventListener('click', ()=>{
+    workingQuote = quoteFormState(null);
+    openModal(quoteFormHtml()); bindQuoteFormActions(false);
+  });
+  document.querySelectorAll('.tabbtn').forEach(t=> t.addEventListener('click', ()=>{ quoteFilter = t.dataset.filter; render(); }));
+  document.querySelectorAll('[data-quote]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const q = db.quotes.find(x=>x.id===row.dataset.quote);
+      openModal(quoteDetail(q));
+      bindQuoteDetailActions(q);
+    });
+  });
+}
+
+function bindClientFormIfPresent(existing){
+  const saveBtn = document.getElementById('saveClientBtn');
+  if(!saveBtn) return;
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  const firstField = document.getElementById('f_name'); if(firstField) firstField.focus();
+  saveBtn.addEventListener('click', ()=>{
+    const nameEl = document.getElementById('f_name');
+    const name = nameEl.value.trim();
+    if(!name){ nameEl.style.borderColor='var(--red)'; nameEl.placeholder='Name is required'; nameEl.focus(); return; }
+    const data = {
+      name, address: document.getElementById('f_address').value.trim(),
+      phone: document.getElementById('f_phone').value.trim(),
+      email: document.getElementById('f_email').value.trim()
+    };
+    if(existing){ Object.assign(existing, data); }
+    else { db.clients.push({ id: uid(), ...data }); }
+    saveDB(); closeModal(); render();
+  });
+  const delBtn = document.getElementById('deleteClientBtn');
+  if(delBtn) delBtn.addEventListener('click', ()=>{
+    db.clients = db.clients.filter(c=>c.id!==existing.id);
+    db.jobs = db.jobs.filter(j=>j.clientId!==existing.id);
+    db.quotes = db.quotes.filter(q=>q.clientId!==existing.id);
+    saveDB(); closeModal(); render();
+  });
+}
+
+function bindClientDetailActions(c){
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('newQuoteForClientBtn').addEventListener('click', ()=>{
+    workingQuote = quoteFormState(null);
+    workingQuote.clientId = c.id;
+    openModal(quoteFormHtml()); bindQuoteFormActions(false);
+  });
+  document.getElementById('editClientBtn').addEventListener('click', ()=>{
+    openModal(clientForm(c)); bindClientFormIfPresent(c);
+  });
+}
+
+function bindJobFormActions(existing){
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  const svcSel = document.getElementById('f_service');
+  if(svcSel) svcSel.addEventListener('change', ()=>{
+    const sv = db.services.find(x=>x.id===svcSel.value);
+    if(sv) document.getElementById('f_title').value = sv.name;
+  });
+  const saveBtn = document.getElementById('saveJobBtn');
+  if(saveBtn) saveBtn.addEventListener('click', ()=>{
+    const clientId = document.getElementById('f_client').value;
+    const title = document.getElementById('f_title').value.trim() || 'Job';
+    const date = document.getElementById('f_date').value;
+    const time = document.getElementById('f_time').value;
+    const notes = document.getElementById('f_notes').value.trim();
+    if(!date) return;
+    db.jobs.push({ id: uid(), clientId, title, date, time, notes });
+    saveDB(); closeModal(); render();
+  });
+}
+
+function bindQuoteFormActions(){
+  bindItemInputs();
+  document.getElementById('cancelBtn').addEventListener('click', ()=>{ workingQuote=null; closeModal(); });
+  document.getElementById('addItemBtn').addEventListener('click', ()=>{
+    workingQuote.items.push({desc:'',qty:1,price:0}); refreshItemsUI();
+  });
+  document.getElementById('f_qclient').addEventListener('change', e=> workingQuote.clientId = e.target.value);
+  function persist(status){
+    workingQuote.clientId = document.getElementById('f_qclient').value;
+    workingQuote.status = status;
+    workingQuote.date = document.getElementById('f_qdate').value || todayISO();
+    const idx = db.quotes.findIndex(q=>q.id===workingQuote.id);
+    if(idx>=0) db.quotes[idx] = workingQuote; else db.quotes.push(workingQuote);
+    saveDB(); workingQuote=null; closeModal(); render();
+  }
+  document.getElementById('saveDraftBtn').addEventListener('click', ()=> persist('draft'));
+  document.getElementById('sendQuoteBtn').addEventListener('click', ()=> persist('sent'));
+}
+
+function bindQuoteDetailActions(q){
+  document.getElementById('cancelBtn') && document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  const emailBtn = document.getElementById('emailQuoteBtn');
+  if(emailBtn) emailBtn.addEventListener('click', ()=>{ if(q.status==='draft'){ q.status='sent'; saveDB(); } });
+  const textBtn = document.getElementById('textQuoteBtn');
+  if(textBtn) textBtn.addEventListener('click', ()=>{ if(q.status==='draft'){ q.status='sent'; saveDB(); } });
+  const editBtn = document.getElementById('editQuoteBtn');
+  if(editBtn) editBtn.addEventListener('click', ()=>{ workingQuote = quoteFormState(q); openModal(quoteFormHtml()); bindQuoteFormActions(); });
+  const delBtn = document.getElementById('deleteQuoteBtn');
+  if(delBtn) delBtn.addEventListener('click', ()=>{ db.quotes = db.quotes.filter(x=>x.id!==q.id); saveDB(); closeModal(); render(); });
+  const paidBtn = document.getElementById('markPaidBtn');
+  if(paidBtn) paidBtn.addEventListener('click', ()=>{ q.status='paid'; saveDB(); closeModal(); render(); });
+  const sentBtn = document.getElementById('markSentBtn');
+  if(sentBtn) sentBtn.addEventListener('click', ()=>{ q.status='sent'; saveDB(); closeModal(); render(); });
+  const convBtn = document.getElementById('convertInvoiceBtn');
+  if(convBtn) convBtn.addEventListener('click', ()=>{ q.kind='invoice'; q.status='invoice'; saveDB(); closeModal(); render(); });
+}
+
+render();
+</script>
+
+<!-- ============ FIREBASE CLOUD SYNC ============ -->
+<script type="module">
+  // 1) Paste your own config here (Firebase Console > Project settings > Your apps > Web app > SDK setup and configuration)
+  const firebaseConfig = {
+    apiKey: "AIzaSyCj_RxGzj2aCEC7vSfxW4QiyEvDRU27RAM",
+    authDomain: "client-invoice-6a891.firebaseapp.com",
+    projectId: "client-invoice-6a891",
+    storageBucket: "client-invoice-6a891.firebasestorage.app",
+    messagingSenderId: "1056307297503",
+    appId: "1:1056307297503:web:a9d54e5ba5ad82ac293d6a",
+    measurementId: "G-9N56FEW9XV"
+  };
+
+  const FF = window.FF;
+  const base = "https://www.gstatic.com/firebasejs/10.12.2/";
+
+  (async ()=>{
+    if(!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_")){
+      FF.configured = false; FF.setStatus('local'); return;   // app keeps working with this device's storage only
+    }
+    FF.configured = true; FF.setStatus('loading');
+    try{
+      const [appM, authM, fsM] = await Promise.all([
+        import(base + "firebase-app.js"),
+        import(base + "firebase-auth.js"),
+        import(base + "firebase-firestore.js")
+      ]);
+      const app = appM.initializeApp(firebaseConfig);
+      const auth = authM.getAuth(app);
+      const fs = fsM.getFirestore(app);
+
+      FF.signIn  = (email, pw)=> authM.signInWithEmailAndPassword(auth, email, pw);
+      FF.signUp  = (email, pw)=> authM.createUserWithEmailAndPassword(auth, email, pw);
+      FF.signOut = ()=> authM.signOut(auth);
+      FF.resetPw = (email)=> authM.sendPasswordResetEmail(auth, email);
+
+      let unsub = null;
+      authM.onAuthStateChanged(auth, user=>{
+        if(unsub){ unsub(); unsub = null; }
+        if(!user){ FF.push = null; FF.onUser(null); return; }
+        // Each account's data lives in its own document: users/{uid}
+        const ref = fsM.doc(fs, "users", user.uid);
+        FF.push = async (payload)=>{
+          try{
+            await fsM.setDoc(ref, { payload, updatedAt: fsM.serverTimestamp() });
+            FF.setStatus('synced'); return true;
+          }catch(e){ console.error("Cloud save failed:", e); FF.setStatus('error', e.code || e.message); return false; }
+        };
+        FF.onUser({ uid: user.uid, email: user.email });
+        unsub = fsM.onSnapshot(ref, snap=>{
+          if(snap.metadata.hasPendingWrites) return;
+          FF.onRemote(snap.exists(), snap.exists() ? snap.data().payload : null);
+        }, err=>{ console.error("Cloud read failed:", err); FF.setStatus('error', err.code || err.message); });
+      });
+    }catch(e){
+      console.error("Firebase failed to load:", e);
+      FF.setStatus('error', 'Could not reach Firebase');
+    }
+  })();
+</script>
+</body>
 </html>
-
-
