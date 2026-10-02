@@ -192,10 +192,20 @@ const FF = window.FF = {
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+const METHODS = { etransfer:'E-transfer', cash:'Cash' };
+function methodLabel(m){ return METHODS[m] || ''; }
+function migrateQuotes(d){
+  let changed = false;
+  (d.quotes||[]).forEach(q=>{
+    if(q.status==='paid' && !q.method && String(q.id).startsWith('imp_pay_')){ q.method = 'etransfer'; changed = true; }
+  });
+  return changed;
+}
 function normalizeDB(d){
   d = d || {};
   d.clients = d.clients || []; d.jobs = d.jobs || []; d.quotes = d.quotes || [];
   d.services = d.services || []; d.settings = d.settings || defaultSettings();
+  migrateQuotes(d);
   return d;
 }
 function mergeDB(remote, local){
@@ -242,9 +252,11 @@ if(!db.services) db.services = [
   {id:uid(), name:'Interior Detail', price:80, seed:true},
   {id:uid(), name:'Full Detail (Sedan)', price:150, seed:true}
 ];
+if(migrateQuotes(db)) saveDB();
 let view = 'clients';
 let calMonth = new Date(); calMonth.setDate(1);
 let quoteFilter = 'all';
+let quoteYear = String(new Date().getFullYear());
 
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function serviceOptions(){
@@ -501,7 +513,7 @@ function importData(d){
     if(q.id && db.quotes.some(x=>x.id===q.id)){ skippedQ++; return; }
     db.quotes.push({
       id:q.id||uid(), num:q.num||++next, clientId:map[q.clientId]||q.clientId,
-      kind:q.kind||'quote', status:q.status||'draft', date:q.date||'',
+      kind:q.kind||'quote', status:q.status||'draft', date:q.date||'', method:q.method||'',
       items:(q.items||[]).map(it=>({desc:it.desc||'', qty:Number(it.qty)||1, price:Number(it.price)||0}))
     });
     addedQ++;
@@ -602,11 +614,29 @@ function renderQuotes(){
     return `<div class="list-row" data-quote="${q.id}">
       <div>
         <div class="name">#${q.num} — ${client?esc(client.name):'No client'}</div>
-        <div class="meta">${q.kind==='invoice'?'Invoice':'Quote'} · ${fmt(quoteTotal(q))}${q.date?' · '+fmtDate(q.date):''}</div>
+        <div class="meta">${q.kind==='invoice'?'Invoice':'Quote'} · ${fmt(quoteTotal(q))}${q.date?' · '+fmtDate(q.date):''}${q.status==='paid'&&q.method?' · '+methodLabel(q.method):''}</div>
       </div>
       <span class="status-pill status-${q.status}">${q.status}</span>
     </div>`;
   }).join('');
+  const paidQ = db.quotes.filter(q=>q.status==='paid' && q.date);
+  const years = [...new Set([quoteYear, ...paidQ.map(q=>q.date.slice(0,4))])].sort().reverse();
+  const inYear = paidQ.filter(q=>q.date.slice(0,4)===quoteYear);
+  const sumBy = f => inYear.filter(f).reduce((t,q)=>t+quoteTotal(q),0);
+  const tEt = sumBy(q=>q.method==='etransfer'), tCash = sumBy(q=>q.method==='cash'), tNone = sumBy(q=>!q.method);
+  const summary = `
+    <div class="card" style="padding:16px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;">
+        <b>Income received</b>
+        <select id="quoteYearSel" style="width:auto;padding:5px 8px;">${years.map(y=>`<option ${y===quoteYear?'selected':''}>${y}</option>`).join('')}</select>
+      </div>
+      <div class="totals" style="margin-top:0;padding-top:0;border-top:none;">
+        <div class="trow"><span>E-transfer</span><span>${fmt(tEt)}</span></div>
+        <div class="trow"><span>Cash</span><span>${fmt(tCash)}</span></div>
+        ${tNone?`<div class="trow"><span>Method not set</span><span>${fmt(tNone)}</span></div>`:''}
+        <div class="trow grand"><span>Total</span><span>${fmt(tEt+tCash+tNone)}</span></div>
+      </div>
+    </div>`;
   const tabs = ['all','draft','sent','invoice','paid'].map(s=>
     `<button class="tabbtn ${quoteFilter===s?'active':''}" data-filter="${s}">${s[0].toUpperCase()+s.slice(1)}</button>`).join('');
   return `
@@ -614,6 +644,7 @@ function renderQuotes(){
       <div><h1>Quotes & Invoices</h1><div class="sub">${db.quotes.length} total</div></div>
       <button class="btn" id="addQuoteBtn">+ New quote</button>
     </div>
+    ${summary}
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">${tabs}</div>
     <div class="card">${rows || `<div class="empty"><b>No quotes yet</b>Create a quote to send pricing to a customer.</div>`}</div>
   `;
@@ -637,7 +668,13 @@ function quoteFormHtml(){
     <h2>${q.num?('#'+q.num+' — '):''}${q.kind==='invoice'?'Invoice':'Quote'}</h2>
     ${db.clients.length===0?'<div class="meta" style="margin-bottom:10px;">Add a client first.</div>':''}
     <div class="field"><label>Client</label><select id="f_qclient">${opts}</select></div>
-    <div class="field"><label>Date</label><input id="f_qdate" type="date" value="${q.date||''}"></div>
+    <div class="row2">
+      <div class="field"><label>Date</label><input id="f_qdate" type="date" value="${q.date||''}"></div>
+      <div class="field"><label>Paid by</label><select id="f_qmethod">
+        <option value="">Not set</option>
+        ${Object.entries(METHODS).map(([k,v])=>`<option value="${k}" ${q.method===k?'selected':''}>${v}</option>`).join('')}
+      </select></div>
+    </div>
     <div class="field"><label>Line items</label>
       <div id="itemsWrap">${itemsHtml}</div>
       <button class="btn ghost small" id="addItemBtn">+ Add line item</button>
@@ -713,7 +750,7 @@ function quoteDetail(q){
     : null;
   return `
     <h2>#${q.num} for ${client?esc(client.name):'—'}</h2>
-    <span class="status-pill status-${q.status}">${q.status}</span>${q.date?` <span class="meta">${fmtDate(q.date)}</span>`:''}
+    <span class="status-pill status-${q.status}">${q.status}</span>${q.status==='paid'&&q.method?` <span class="status-pill status-invoice">${methodLabel(q.method)}</span>`:''}${q.date?` <span class="meta">${fmtDate(q.date)}</span>`:''}
     <div class="totals" style="margin-top:12px;">${itemsHtml}<div class="trow grand"><span>Total</span><span>${fmt(quoteTotal(q))}</span></div></div>
     <div class="modal-actions" style="flex-wrap:wrap;">
       ${mailHref ? `<a class="btn ghost small" id="emailQuoteBtn" href="${mailHref}">Email quote</a>` : `<span class="meta">Add client email to send by email</span>`}
@@ -722,7 +759,9 @@ function quoteDetail(q){
     <div class="modal-actions" style="flex-wrap:wrap;">
       <button class="btn danger" id="deleteQuoteBtn">Delete</button>
       <button class="btn ghost" id="editQuoteBtn">Edit</button>
-      ${q.status!=='paid' ? `<button class="btn" id="markPaidBtn">Mark paid</button>` : ''}
+      ${q.status!=='paid'
+        ? Object.entries(METHODS).map(([k,v])=>`<button class="btn" data-paid="${k}">Paid — ${v}</button>`).join('')
+        : Object.entries(METHODS).filter(([k])=>k!==q.method).map(([k,v])=>`<button class="btn ghost" data-setmethod="${k}">${q.method?'Change to':'Set as'} ${v}</button>`).join('')}
       ${q.status==='draft' ? `<button class="btn" id="markSentBtn">Mark sent</button>` : ''}
       ${(q.status==='sent') ? `<button class="btn" id="convertInvoiceBtn">Convert to invoice</button>` : ''}
     </div>`;
@@ -829,6 +868,8 @@ function attachHandlers(){
     workingQuote = quoteFormState(null);
     openModal(quoteFormHtml()); bindQuoteFormActions(false);
   });
+  const ySel = document.getElementById('quoteYearSel');
+  if(ySel) ySel.addEventListener('change', ()=>{ quoteYear = ySel.value; render(); });
   document.querySelectorAll('.tabbtn').forEach(t=> t.addEventListener('click', ()=>{ quoteFilter = t.dataset.filter; render(); }));
   document.querySelectorAll('[data-quote]').forEach(row=>{
     row.addEventListener('click', ()=>{
@@ -909,6 +950,7 @@ function bindQuoteFormActions(){
     workingQuote.clientId = document.getElementById('f_qclient').value;
     workingQuote.status = status;
     workingQuote.date = document.getElementById('f_qdate').value || todayISO();
+    workingQuote.method = document.getElementById('f_qmethod').value;
     const idx = db.quotes.findIndex(q=>q.id===workingQuote.id);
     if(idx>=0) db.quotes[idx] = workingQuote; else db.quotes.push(workingQuote);
     saveDB(); workingQuote=null; closeModal(); render();
@@ -927,8 +969,13 @@ function bindQuoteDetailActions(q){
   if(editBtn) editBtn.addEventListener('click', ()=>{ workingQuote = quoteFormState(q); openModal(quoteFormHtml()); bindQuoteFormActions(); });
   const delBtn = document.getElementById('deleteQuoteBtn');
   if(delBtn) delBtn.addEventListener('click', ()=>{ db.quotes = db.quotes.filter(x=>x.id!==q.id); saveDB(); closeModal(); render(); });
-  const paidBtn = document.getElementById('markPaidBtn');
-  if(paidBtn) paidBtn.addEventListener('click', ()=>{ q.status='paid'; saveDB(); closeModal(); render(); });
+  document.querySelectorAll('[data-paid]').forEach(b=> b.addEventListener('click', ()=>{
+    q.status='paid'; q.method=b.dataset.paid; if(!q.date) q.date=todayISO();
+    saveDB(); closeModal(); render();
+  }));
+  document.querySelectorAll('[data-setmethod]').forEach(b=> b.addEventListener('click', ()=>{
+    q.method=b.dataset.setmethod; saveDB(); closeModal(); render();
+  }));
   const sentBtn = document.getElementById('markSentBtn');
   if(sentBtn) sentBtn.addEventListener('click', ()=>{ q.status='sent'; saveDB(); closeModal(); render(); });
   const convBtn = document.getElementById('convertInvoiceBtn');
