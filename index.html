@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>FieldFlow</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -113,9 +114,7 @@
   .svc-row{display:grid;grid-template-columns:1fr 90px 26px;gap:8px;align-items:center;margin-bottom:8px;}
   .pick-row{display:flex;gap:6px;}
   .pick-row select{flex:1;min-width:0;}
-  .svc-opts{margin:-2px 0 12px;padding:8px 10px;border:1px dashed var(--line);border-radius:8px;}
-  .svc-opts summary{cursor:pointer;}
-  .svc-row input,.it-pick,.it-opt{padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.85rem;width:100%;}
+  .svc-row input,.it-pick{padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.85rem;width:100%;}
   .it-desc-wrap{display:flex;flex-direction:column;gap:5px;min-width:0;}
   .bottomnav{display:none;}
   @media (max-width: 760px){
@@ -208,18 +207,18 @@ function migrateQuotes(d){
 function normalizeDB(d){
   d = d || {};
   d.clients = d.clients || []; d.jobs = d.jobs || []; d.quotes = d.quotes || [];
-  d.services = d.services || []; d.options = d.options || []; d.settings = d.settings || defaultSettings();
+  d.services = d.services || []; d.settings = d.settings || defaultSettings();
   migrateQuotes(d);
   return d;
 }
 function mergeDB(remote, local){
   const out = normalizeDB(remote);
-  ['clients','jobs','quotes','services','options'].forEach(k=>{
+  ['clients','jobs','quotes','services'].forEach(k=>{
     const ids = new Set(out[k].map(x=>x.id));
     const names = new Set(out[k].map(x=>(x.name||'').toLowerCase()));
     (local[k]||[]).forEach(x=>{
       if(ids.has(x.id)) return;
-      if((k==='services'||k==='options') && (x.seed || names.has((x.name||'').toLowerCase()))) return;
+      if(k==='services' && (x.seed || names.has((x.name||'').toLowerCase()))) return;
       out[k].push(x);
     });
   });
@@ -251,7 +250,6 @@ function syncLabel(){
 function updateSyncUI(){ document.querySelectorAll('.sync-label').forEach(el=> el.textContent = syncLabel()); }
 let db = loadDB();
 if(!db.settings) db.settings = defaultSettings();
-if(!db.options) db.options = [];
 if(!db.services) db.services = [
   {id:uid(), name:'Exterior Wash', price:40, seed:true},
   {id:uid(), name:'Interior Detail', price:80, seed:true},
@@ -267,21 +265,6 @@ function uid(){ return Math.random().toString(36).slice(2,9); }
 function serviceOptions(sel){
   return '<option value="">Choose a service…</option>' +
     db.services.map(sv=>`<option value="${sv.id}" ${sv.id===sel?'selected':''}>${esc(sv.name)}${sv.price?' — '+fmt(sv.price):''}</option>`).join('');
-}
-function optLabel(){ return (db.settings && db.settings.optionLabel) || 'Option'; }
-function optionChoices(sel){
-  return `<option value="">Select ${esc(optLabel().toLowerCase())}…</option>` +
-    db.options.map(o=>`<option value="${o.id}" ${o.id===sel?'selected':''}>${esc(o.name)}</option>`).join('');
-}
-function servicePrice(sv, optId){
-  const o = db.options.find(x=>x.id===optId);
-  const ov = sv.prices && sv.prices[optId];
-  if(o && ov!==undefined && ov!==null && ov!=='') return Number(ov)||0;
-  return (Number(sv.price)||0) + (o ? (Number(o.adj)||0) : 0);
-}
-function serviceText(sv, optId){
-  const o = db.options.find(x=>x.id===optId);
-  return o ? `${sv.name} — ${o.name}` : sv.name;
 }
 function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
 function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso+'T00:00:00'); return isNaN(d)?iso:d.toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'}); }
@@ -435,7 +418,6 @@ function jobForm(prefillDate){
     <div class="field"><label>Job title</label>
       <div class="pick-row" style="margin-bottom:6px;">
         <select id="f_service">${serviceOptions()}</select>
-        ${db.options.length ? `<select id="f_option">${optionChoices()}</select>` : ''}
       </div>
       <input id="f_title" placeholder="Pick a service above or type your own">
     </div>
@@ -472,6 +454,15 @@ function renderSettings(){
       <div class="field"><label>Business name</label><input id="s_name" value="${esc(s.businessName)}" placeholder="Your Business Name"></div>
       <div class="field"><label>Sends from this email</label><input id="s_email" value="${esc(s.email)}" placeholder="you@business.com"></div>
       <div class="field"><label>Sends from this phone</label><input id="s_phone" value="${esc(s.phone)}" placeholder="(555) 555-1234"></div>
+      <div class="field"><label>Work address (shown on receipts)</label><textarea id="s_address" rows="3" placeholder="123 Main St&#10;City, Province A1B 2C3">${esc(s.address||'')}</textarea></div>
+      <div class="field"><label>Company logo (shown on receipts)</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <img id="logoPreview" alt="Logo" src="${s.logo||''}" style="max-height:56px;max-width:140px;border:1px solid var(--line);border-radius:6px;padding:4px;background:#fff;display:${s.logo?'block':'none'};">
+          <button class="btn ghost small" id="logoBtn" type="button">${s.logo?'Change logo':'Upload logo'}</button>
+          <button class="btn ghost small" id="logoRemoveBtn" type="button" style="display:${s.logo?'inline-flex':'none'};">Remove</button>
+          <input type="file" id="logoFile" accept="image/*" style="display:none;">
+        </div>
+      </div>
       <button class="btn" id="saveSettingsBtn" style="margin-top:6px;">Save settings</button>
       <div class="meta" id="settingsSaved" style="margin-top:10px;height:16px;"></div>
     </div>
@@ -486,15 +477,7 @@ function renderSettings(){
           <input class="svc-name" value="${esc(sv.name)}">
           <input class="svc-price" type="number" min="0" step="0.01" value="${sv.price||0}">
           <button class="rm svc-del" title="Remove">✕</button>
-        </div>
-        ${db.options.length ? `<details class="svc-opts"><summary class="meta">Prices by ${esc(optLabel().toLowerCase())}</summary>
-          ${db.options.map(o=>`<div class="svc-row" style="grid-template-columns:1fr 90px;margin:8px 0 0;">
-            <span class="meta">${esc(o.name)}</span>
-            <input class="svc-optprice" data-svc="${sv.id}" data-opt="${o.id}" type="number" min="0" step="0.01"
-              placeholder="${(Number(sv.price)||0)+(Number(o.adj)||0)}" value="${sv.prices && sv.prices[o.id]!=null ? sv.prices[o.id] : ''}">
-          </div>`).join('')}
-          <div class="meta" style="margin-top:8px;">Leave blank to use the base price plus the option's amount.</div>
-        </details>` : ''}`).join('') : '<div class="meta" style="margin-bottom:10px;">No services yet. Add your first below.</div>'}
+        </div>`).join('') : '<div class="meta" style="margin-bottom:10px;">No services yet. Add your first below.</div>'}
       <div class="svc-row" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
         <input id="new_svc_name" placeholder="New service name">
         <input id="new_svc_price" type="number" min="0" step="0.01" placeholder="Price">
@@ -503,24 +486,6 @@ function renderSettings(){
       <button class="btn" id="addServiceBtn" style="margin-top:4px;">+ Add service</button>
     </div>
 
-    <div class="topline" style="margin-top:28px;"><div><h2 style="margin:0;font-size:1.15rem;">Options</h2>
-      <div class="sub">Optional. Variations you pick after a service, like a size, package or level. Set them up once and use them with any service.</div></div></div>
-    <div class="card" style="padding:20px;max-width:420px;">
-      <div class="field"><label>What do you call these?</label><input id="opt_label" value="${esc(optLabel())}" placeholder="Option, Size, Package…"></div>
-      ${db.options.map(o=>`
-        <div class="svc-row" data-opt="${o.id}">
-          <input class="opt-name" value="${esc(o.name)}">
-          <input class="opt-adj" type="number" step="0.01" value="${o.adj||0}" title="Added to the service price">
-          <button class="rm opt-del" title="Remove">✕</button>
-        </div>`).join('')}
-      <div class="svc-row" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
-        <input id="new_opt_name" placeholder="New option name">
-        <input id="new_opt_adj" type="number" step="0.01" placeholder="+ Amount">
-        <span></span>
-      </div>
-      <div class="meta" style="margin:4px 0 10px;">The amount is added to a service's base price. Use 0 if it doesn't change the price, or set exact prices under each service.</div>
-      <button class="btn" id="addOptionBtn">+ Add option</button>
-    </div>
   `;
 }
 
@@ -733,6 +698,7 @@ function quoteFormHtml(){
     <div class="modal-actions" style="flex-wrap:wrap;">
       <button class="btn ghost" id="cancelBtn">Cancel</button>
       <button class="btn ghost" id="saveDraftBtn">Save draft</button>
+      <button class="btn" id="makeReceiptFormBtn" ${db.clients.length===0?'disabled':''}>Make receipt</button>
       <button class="btn" id="sendQuoteBtn" ${db.clients.length===0?'disabled':''}>Save & mark sent</button>
     </div>`;
 }
@@ -743,7 +709,6 @@ function lineItemsHtml(){
       <div class="it-desc-wrap">
         <div class="pick-row">
           <select class="it-pick">${serviceOptions(it.svc)}</select>
-          ${db.options.length ? `<select class="it-opt">${optionChoices(it.opt)}</select>` : ''}
         </div>
         <input class="it-desc" placeholder="Description" value="${esc(it.desc)}">
       </div>
@@ -760,17 +725,15 @@ function refreshItemsUI(){
 function bindItemInputs(){
   document.querySelectorAll('#itemsWrap .li-row').forEach(row=>{
     const idx = +row.dataset.idx;
-    const applyPick = ()=>{
+    row.querySelector('.it-pick').addEventListener('change', e=>{
       const it = workingQuote.items[idx];
+      it.svc = e.target.value;
       const sv = db.services.find(x=>x.id===it.svc);
       if(!sv) return;
-      it.desc = serviceText(sv, it.opt);
-      it.price = servicePrice(sv, it.opt);
+      it.desc = sv.name;
+      it.price = Number(sv.price)||0;
       refreshItemsUI();
-    };
-    row.querySelector('.it-pick').addEventListener('change', e=>{ workingQuote.items[idx].svc = e.target.value; applyPick(); });
-    const optEl = row.querySelector('.it-opt');
-    if(optEl) optEl.addEventListener('change', e=>{ workingQuote.items[idx].opt = e.target.value; applyPick(); });
+    });
     row.querySelector('.it-desc').addEventListener('input', e=> workingQuote.items[idx].desc = e.target.value);
     row.querySelector('.it-qty').addEventListener('input', e=>{ workingQuote.items[idx].qty = e.target.value; document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote)); });
     row.querySelector('.it-price').addEventListener('input', e=>{ workingQuote.items[idx].price = e.target.value; document.getElementById('qTotalDisplay').textContent = fmt(quoteTotal(workingQuote)); });
@@ -795,6 +758,154 @@ function buildQuoteMessage(q, client){
   return { subject: `${kindLabel} #${q.num} from ${from}`, body: lines.join('\n') };
 }
 
+// ---------- PDF receipts ----------
+function prepareLogo(file){
+  // shrink to max 400px so it stays small enough to sync
+  return new Promise((resolve, reject)=>{
+    const fr = new FileReader();
+    fr.onerror = reject;
+    fr.onload = ()=>{
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = ()=>{
+        const iw = img.width || 300, ih = img.height || 300;
+        const sc = Math.min(1, 400/Math.max(iw, ih));
+        const w = Math.max(1, Math.round(iw*sc)), h = Math.max(1, Math.round(ih*sc));
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        let url = c.toDataURL('image/png');
+        if(url.length > 350000){
+          const c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
+          const x = c2.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0,0,w,h); x.drawImage(img,0,0,w,h);
+          url = c2.toDataURL('image/jpeg', 0.85);
+        }
+        resolve(url);
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+function docTitle(q){ return q.status==='paid' ? 'RECEIPT' : (q.kind==='invoice' ? 'INVOICE' : 'QUOTE'); }
+function receiptHtml(q, client){
+  const s = db.settings || {};
+  const title = docTitle(q);
+  const nl = t => esc(t||'').replace(/\n/g,'<br>');
+  const rows = q.items.map(it=>{
+    const qty = Number(it.qty)||0, price = Number(it.price)||0;
+    return `<tr>
+      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;">${esc(it.desc)||'Item'}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${qty}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${fmt(price)}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${fmt(qty*price)}</td></tr>`;
+  }).join('');
+  const paidLine = q.status==='paid'
+    ? `<div style="margin-top:6px;font-weight:700;color:#15803d;">PAID${q.method?' — '+esc(methodLabel(q.method)):''}</div>` : '';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#111;font-size:13px;line-height:1.45;padding:8px 6px;background:#fff;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px;">
+      <div style="max-width:55%;">
+        ${s.logo ? `<img src="${s.logo}" alt="" style="max-height:80px;max-width:220px;display:block;margin-bottom:10px;">` : ''}
+        <div style="font-size:18px;font-weight:700;">${esc(s.businessName)||'Your Business'}</div>
+        ${s.address ? `<div style="margin-top:4px;">${nl(s.address)}</div>` : ''}
+        ${s.phone ? `<div>${esc(s.phone)}</div>` : ''}
+        ${s.email ? `<div>${esc(s.email)}</div>` : ''}
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:28px;font-weight:800;letter-spacing:1px;">${title}</div>
+        <div style="margin-top:6px;">No. <b>#${q.num}</b></div>
+        ${q.date ? `<div>Date: ${esc(fmtDate(q.date))}</div>` : ''}
+        ${paidLine}
+      </div>
+    </div>
+    <div style="margin-top:28px;">
+      <div style="font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1px;">BILL TO</div>
+      <div style="font-weight:700;margin-top:3px;">${client?esc(client.name):'—'}</div>
+      ${client && client.address ? `<div>${nl(client.address)}</div>` : ''}
+      ${client && client.phone ? `<div>${esc(client.phone)}</div>` : ''}
+      ${client && client.email ? `<div>${esc(client.email)}</div>` : ''}
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-top:26px;">
+      <thead><tr style="background:#f3f4f6;">
+        <th style="padding:9px 8px;text-align:left;">Description</th>
+        <th style="padding:9px 8px;text-align:right;">Qty</th>
+        <th style="padding:9px 8px;text-align:right;">Price</th>
+        <th style="padding:9px 8px;text-align:right;">Amount</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+      <div style="min-width:220px;border-top:2px solid #111;padding-top:8px;display:flex;justify-content:space-between;font-size:16px;font-weight:800;">
+        <span>Total</span><span>${fmt(quoteTotal(q))}</span></div>
+    </div>
+    <div style="margin-top:40px;text-align:center;color:#6b7280;">Thank you for your business!</div>
+  </div>`;
+}
+let lastPdfUrl = null;
+function receiptNotice(html){
+  openModal(`${html}<div class="modal-actions"><button class="btn ghost" id="cancelBtn">Close</button></div>`);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+}
+async function makeReceipt(q){
+  const client = db.clients.find(c=>c.id===q.clientId);
+  if(!window.html2pdf){
+    receiptNotice('<h2>PDF tool not loaded</h2><div class="meta">It needs an internet connection the first time. Check your connection, reload the page and try again.</div>');
+    return;
+  }
+  receiptNotice('<h2>Making your PDF…</h2><div class="meta">One moment.</div>');
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;left:-10000px;top:0;width:760px;background:#fff;';
+  wrap.innerHTML = receiptHtml(q, client);
+  document.body.appendChild(wrap);
+  try{
+    await Promise.all([...wrap.querySelectorAll('img')].map(i=> i.decode ? i.decode().catch(()=>{}) : null));
+    const slug = (client?client.name:'client').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase();
+    const filename = `${docTitle(q).toLowerCase()}-${q.num}-${slug}.pdf`;
+    const blob = await html2pdf().set({
+      margin:[10,10,10,10], filename,
+      image:{type:'jpeg',quality:0.98},
+      html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},
+      jsPDF:{unit:'mm',format:'letter',orientation:'portrait'},
+      pagebreak:{mode:['css','legacy']}
+    }).from(wrap.firstElementChild).outputPdf('blob');
+    wrap.remove();
+    showReceiptReady(q, client, blob, filename);
+  }catch(e){
+    console.error(e); wrap.remove();
+    receiptNotice('<h2>Could not make the PDF</h2><div class="meta">Something went wrong while building it. Please try again.</div>');
+  }
+}
+function showReceiptReady(q, client, blob, filename){
+  if(lastPdfUrl) URL.revokeObjectURL(lastPdfUrl);
+  lastPdfUrl = URL.createObjectURL(blob);
+  const file = new File([blob], filename, {type:'application/pdf'});
+  const canShare = !!(navigator.canShare && navigator.canShare({files:[file]}));
+  const biz = db.settings.businessName || 'us';
+  const subject = `${docTitle(q)[0]+docTitle(q).slice(1).toLowerCase()} #${q.num} from ${biz}`;
+  const mailHref = client && client.email
+    ? `mailto:${encodeURIComponent(client.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(`Hi ${client.name},\n\nYour ${docTitle(q).toLowerCase()} is attached.\n\nThanks,\n${biz}`)}` : null;
+  const smsHref = client && client.phone
+    ? `sms:${encodeURIComponent(client.phone)}?body=${encodeURIComponent(`Hi ${client.name}, here is your ${docTitle(q).toLowerCase()} #${q.num} from ${biz}.`)}` : null;
+  openModal(`
+    <h2>${docTitle(q)[0]+docTitle(q).slice(1).toLowerCase()} ready</h2>
+    <div class="meta" style="margin-bottom:6px;">${esc(filename)}</div>
+    <div class="modal-actions" style="flex-wrap:wrap;justify-content:flex-start;">
+      ${canShare ? `<button class="btn" id="rcShare">Share…</button>` : ''}
+      <a class="btn ${canShare?'ghost':''}" id="rcDownload" href="${lastPdfUrl}" download="${esc(filename)}">Download PDF</a>
+      <a class="btn ghost" href="${lastPdfUrl}" target="_blank" rel="noopener">View</a>
+    </div>
+    ${canShare ? `<div class="meta" style="margin-top:10px;">Share opens your phone's menu, so you can send it by email, text or any app.</div>`
+    : `<div class="modal-actions" style="flex-wrap:wrap;justify-content:flex-start;">
+        ${mailHref ? `<a class="btn ghost small" href="${mailHref}">Email</a>` : ''}
+        ${smsHref ? `<a class="btn ghost small" href="${smsHref}">Text</a>` : ''}
+      </div>
+      <div class="meta" style="margin-top:8px;">Download the PDF first, then attach it to your email or text. (Email and text links can't attach files by themselves.)</div>`}
+    <div class="modal-actions"><button class="btn ghost" id="cancelBtn">Close</button></div>`);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  const sh = document.getElementById('rcShare');
+  if(sh) sh.addEventListener('click', ()=>{
+    navigator.share({files:[file], title:subject, text:`Hi ${client?client.name:'there'}, here is your ${docTitle(q).toLowerCase()} from ${biz}.`}).catch(()=>{});
+  });
+}
+
 function quoteDetail(q){
   const client = db.clients.find(c=>c.id===q.clientId);
   const itemsHtml = q.items.map(it=>`<div class="trow"><span>${esc(it.desc)||'Item'} × ${it.qty}</span><span>${fmt((Number(it.qty)||0)*(Number(it.price)||0))}</span></div>`).join('');
@@ -816,6 +927,7 @@ function quoteDetail(q){
     <div class="modal-actions" style="flex-wrap:wrap;">
       <button class="btn danger" id="deleteQuoteBtn">Delete</button>
       <button class="btn ghost" id="editQuoteBtn">Edit</button>
+      <button class="btn" id="makeReceiptBtn">Make receipt (PDF)</button>
       ${q.status!=='paid'
         ? Object.entries(METHODS).map(([k,v])=>`<button class="btn" data-paid="${k}">Paid — ${v}</button>`).join('')
         : Object.entries(METHODS).filter(([k])=>k!==q.method).map(([k,v])=>`<button class="btn ghost" data-setmethod="${k}">${q.method?'Change to':'Set as'} ${v}</button>`).join('')}
@@ -867,10 +979,29 @@ function attachHandlers(){
     db.settings.businessName = document.getElementById('s_name').value.trim();
     db.settings.email = document.getElementById('s_email').value.trim();
     db.settings.phone = document.getElementById('s_phone').value.trim();
+    db.settings.address = document.getElementById('s_address').value.trim();
     saveDB();
     const msg = document.getElementById('settingsSaved');
     msg.textContent = 'Saved.'; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2000);
   });
+
+  const logoBtn = document.getElementById('logoBtn'), logoFile = document.getElementById('logoFile');
+  if(logoBtn && logoFile){
+    const prev = document.getElementById('logoPreview'), rmBtn = document.getElementById('logoRemoveBtn');
+    logoBtn.addEventListener('click', ()=> logoFile.click());
+    logoFile.addEventListener('change', async ()=>{
+      const f = logoFile.files[0]; if(!f) return;
+      try{
+        db.settings.logo = await prepareLogo(f); saveDB();
+        prev.src = db.settings.logo; prev.style.display='block'; rmBtn.style.display='inline-flex'; logoBtn.textContent='Change logo';
+      }catch(e){ alert('That image could not be read. Try a PNG or JPG.'); }
+      logoFile.value = '';
+    });
+    rmBtn.addEventListener('click', ()=>{
+      delete db.settings.logo; saveDB();
+      prev.style.display='none'; rmBtn.style.display='none'; logoBtn.textContent='Upload logo';
+    });
+  }
 
   const expBtn = document.getElementById('exportBtn');
   if(expBtn) expBtn.addEventListener('click', downloadBackup);
@@ -918,35 +1049,6 @@ function attachHandlers(){
       row.querySelector('.svc-del').addEventListener('click', ()=>{ db.services = db.services.filter(x=>x.id!==sv.id); saveDB(); render(); });
     });
   }
-
-  const optLbl = document.getElementById('opt_label');
-  if(optLbl) optLbl.addEventListener('change', ()=>{ db.settings.optionLabel = optLbl.value.trim() || 'Option'; saveDB(); render(); });
-  const addOptBtn = document.getElementById('addOptionBtn');
-  if(addOptBtn){
-    addOptBtn.addEventListener('click', ()=>{
-      const nameEl = document.getElementById('new_opt_name');
-      const name = nameEl.value.trim();
-      if(!name){ nameEl.style.borderColor='var(--red)'; nameEl.focus(); return; }
-      db.options.push({ id: uid(), name, adj: Number(document.getElementById('new_opt_adj').value)||0 });
-      saveDB(); render();
-    });
-    document.querySelectorAll('.svc-row[data-opt]').forEach(row=>{
-      const o = db.options.find(x=>x.id===row.dataset.opt);
-      row.querySelector('.opt-name').addEventListener('change', e=>{ const v=e.target.value.trim(); if(v){ o.name=v; saveDB(); } else e.target.value=o.name; });
-      row.querySelector('.opt-adj').addEventListener('change', e=>{ o.adj = Number(e.target.value)||0; saveDB(); });
-      row.querySelector('.opt-del').addEventListener('click', ()=>{
-        db.options = db.options.filter(x=>x.id!==o.id);
-        db.services.forEach(sv=>{ if(sv.prices) delete sv.prices[o.id]; });
-        saveDB(); render();
-      });
-    });
-  }
-  document.querySelectorAll('.svc-optprice').forEach(inp=> inp.addEventListener('change', ()=>{
-    const sv = db.services.find(x=>x.id===inp.dataset.svc); if(!sv) return;
-    sv.prices = sv.prices || {};
-    if(inp.value==='') delete sv.prices[inp.dataset.opt]; else sv.prices[inp.dataset.opt] = Number(inp.value)||0;
-    delete sv.seed; saveDB();
-  }));
 
   // Quotes view
   const addQuoteBtn = document.getElementById('addQuoteBtn');
@@ -1008,13 +1110,11 @@ function bindClientDetailActions(c){
 function bindJobFormActions(existing){
   document.getElementById('cancelBtn').addEventListener('click', closeModal);
   const svcSel = document.getElementById('f_service');
-  const optSel = document.getElementById('f_option');
   const fillTitle = ()=>{
     const sv = db.services.find(x=>x.id===svcSel.value);
-    if(sv) document.getElementById('f_title').value = serviceText(sv, optSel ? optSel.value : '');
+    if(sv) document.getElementById('f_title').value = sv.name;
   };
   if(svcSel) svcSel.addEventListener('change', fillTitle);
-  if(svcSel && optSel) optSel.addEventListener('change', fillTitle);
   const saveBtn = document.getElementById('saveJobBtn');
   if(saveBtn) saveBtn.addEventListener('click', ()=>{
     const clientId = document.getElementById('f_client').value;
@@ -1035,15 +1135,18 @@ function bindQuoteFormActions(){
     workingQuote.items.push({desc:'',qty:1,price:0}); refreshItemsUI();
   });
   document.getElementById('f_qclient').addEventListener('change', e=> workingQuote.clientId = e.target.value);
-  function persist(status){
+  function persist(status, after){
     workingQuote.clientId = document.getElementById('f_qclient').value;
     workingQuote.status = status;
     workingQuote.date = document.getElementById('f_qdate').value || todayISO();
     workingQuote.method = document.getElementById('f_qmethod').value;
     const idx = db.quotes.findIndex(q=>q.id===workingQuote.id);
     if(idx>=0) db.quotes[idx] = workingQuote; else db.quotes.push(workingQuote);
+    const saved = workingQuote;
     saveDB(); workingQuote=null; closeModal(); render();
+    if(after) after(saved);
   }
+  document.getElementById('makeReceiptFormBtn').addEventListener('click', ()=> persist(workingQuote.status||'draft', makeReceipt));
   document.getElementById('saveDraftBtn').addEventListener('click', ()=> persist('draft'));
   document.getElementById('sendQuoteBtn').addEventListener('click', ()=> persist('sent'));
 }
@@ -1056,6 +1159,8 @@ function bindQuoteDetailActions(q){
   if(textBtn) textBtn.addEventListener('click', ()=>{ if(q.status==='draft'){ q.status='sent'; saveDB(); } });
   const editBtn = document.getElementById('editQuoteBtn');
   if(editBtn) editBtn.addEventListener('click', ()=>{ workingQuote = quoteFormState(q); openModal(quoteFormHtml()); bindQuoteFormActions(); });
+  const rcBtn = document.getElementById('makeReceiptBtn');
+  if(rcBtn) rcBtn.addEventListener('click', ()=> makeReceipt(q));
   const delBtn = document.getElementById('deleteQuoteBtn');
   if(delBtn) delBtn.addEventListener('click', ()=>{ db.quotes = db.quotes.filter(x=>x.id!==q.id); saveDB(); closeModal(); render(); });
   document.querySelectorAll('[data-paid]').forEach(b=> b.addEventListener('click', ()=>{
