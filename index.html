@@ -97,7 +97,8 @@
   /* quotes */
   .tabbtn{padding:6px 13px;border-radius:20px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);
     font-size:0.8rem;font-weight:600;cursor:pointer;}
-  .tabbtn.active{background:var(--green-dark);color:#fff;border-color:var(--green-dark);}
+  .tabbtn.active,.listtab.active{background:var(--green-dark);color:#fff;border-color:var(--green-dark);}
+  .listtab{padding:6px 13px;border-radius:20px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);font-family:inherit;font-size:0.85rem;font-weight:600;cursor:pointer;}
   .status-pill{font-size:0.68rem;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;}
   .status-draft{background:#EDEAE0;color:#6B6650;}
   .status-sent{background:#FBF0DA;color:var(--gold);}
@@ -116,6 +117,13 @@
   .pick-row select{flex:1;min-width:0;}
   .svc-row input,.it-pick{padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.85rem;width:100%;}
   .it-desc-wrap{display:flex;flex-direction:column;gap:5px;min-width:0;}
+  .todo-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);}
+  .todo-row:last-child{border-bottom:none;}
+  .todo-row input[type=checkbox]{width:20px;height:20px;accent-color:var(--green);flex-shrink:0;cursor:pointer;}
+  .todo-text{flex:1;min-width:0;word-break:break-word;}
+  .todo-row.done .todo-text{text-decoration:line-through;color:var(--ink-soft);}
+  .todo-add{display:flex;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line);}
+  .todo-add input{flex:1;min-width:0;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.95rem;}
   .bottomnav{display:none;}
   @media (max-width: 760px){
     .sidebar{display:none;}
@@ -137,6 +145,7 @@
     <button class="navbtn" data-view="clients"><span class="ic">👤</span> Clients</button>
     <button class="navbtn" data-view="schedule"><span class="ic">📅</span> Schedule</button>
     <button class="navbtn" data-view="quotes"><span class="ic">🧾</span> Quotes & Invoices</button>
+    <button class="navbtn" data-view="lists"><span class="ic">✅</span> Lists</button>
     <div style="flex:1;"></div>
     <button class="navbtn" data-view="settings"><span class="ic">⚙️</span> Settings</button>
   </nav>
@@ -146,6 +155,7 @@
   <button data-view="clients">👤<span>Clients</span></button>
   <button data-view="schedule">📅<span>Schedule</span></button>
   <button data-view="quotes">🧾<span>Quotes</span></button>
+  <button data-view="lists">✅<span>Lists</span></button>
   <button data-view="settings">⚙️<span>Settings</span></button>
 </nav>
 
@@ -207,13 +217,13 @@ function migrateQuotes(d){
 function normalizeDB(d){
   d = d || {};
   d.clients = d.clients || []; d.jobs = d.jobs || []; d.quotes = d.quotes || [];
-  d.services = d.services || []; d.settings = d.settings || defaultSettings();
+  d.services = d.services || []; d.todos = d.todos || []; d.settings = d.settings || defaultSettings();
   migrateQuotes(d);
   return d;
 }
 function mergeDB(remote, local){
   const out = normalizeDB(remote);
-  ['clients','jobs','quotes','services'].forEach(k=>{
+  ['clients','jobs','quotes','services','todos'].forEach(k=>{
     const ids = new Set(out[k].map(x=>x.id));
     const names = new Set(out[k].map(x=>(x.name||'').toLowerCase()));
     (local[k]||[]).forEach(x=>{
@@ -256,7 +266,9 @@ if(!db.services) db.services = [
   {id:uid(), name:'Full Detail (Sedan)', price:150, seed:true}
 ];
 if(migrateQuotes(db)) saveDB();
+if(!db.todos) db.todos = [];
 let view = 'clients';
+let listTab = 'buy';
 let calMonth = new Date(); calMonth.setDate(1);
 let quoteFilter = 'all';
 let quoteYear = String(new Date().getFullYear());
@@ -292,6 +304,7 @@ function render(){
   if(view==='clients') main.innerHTML = renderClients();
   else if(view==='schedule') main.innerHTML = renderSchedule();
   else if(view==='settings') main.innerHTML = renderSettings();
+  else if(view==='lists') main.innerHTML = renderLists();
   else main.innerHTML = renderQuotes();
   attachHandlers();
 }
@@ -446,6 +459,38 @@ function jobDetail(j){
 }
 
 // ================= SETTINGS =================
+const LIST_META = {
+  buy:  { label:'To buy', ph:'e.g. Microfiber towels, wax, soap…', empty:'Nothing on the shopping list. Add supplies you need to buy.' },
+  todo: { label:'To do',  ph:'e.g. Renew insurance, call supplier…', empty:'Nothing on the to-do list. Add tasks for later.' }
+};
+function renderLists(){
+  const m = LIST_META[listTab];
+  const all = db.todos.filter(t=>t.list===listTab);
+  const open = all.filter(t=>!t.done).sort((a,b)=>(a.created||0)-(b.created||0));
+  const done = all.filter(t=>t.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+  const count = k => db.todos.filter(t=>t.list===k && !t.done).length;
+  const tabs = Object.keys(LIST_META).map(k=>
+    `<button class="listtab tabbtn-like ${listTab===k?'active':''}" data-list="${k}">${LIST_META[k].label} (${count(k)})</button>`).join('');
+  const row = t => `<div class="todo-row ${t.done?'done':''}" data-todo="${t.id}">
+      <input type="checkbox" class="todo-check" ${t.done?'checked':''}>
+      <span class="todo-text">${esc(t.text)}</span>
+      <button class="rm todo-del" title="Remove">✕</button>
+    </div>`;
+  return `
+    <div class="topline">
+      <div><h1>Lists</h1><div class="sub">${open.length} to go · <span class="sync-label">${syncLabel()}</span></div></div>
+      ${done.length ? `<button class="btn ghost" id="clearDoneBtn">Clear done (${done.length})</button>` : ''}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">${tabs}</div>
+    <div class="card">
+      <div class="todo-add">
+        <input id="todoInput" placeholder="${esc(m.ph)}" autocomplete="off">
+        <button class="btn" id="todoAddBtn">Add</button>
+      </div>
+      ${all.length ? open.map(row).join('') + done.map(row).join('') : `<div class="empty"><b>${m.label}</b>${m.empty}</div>`}
+    </div>`;
+}
+
 function renderSettings(){
   const s = db.settings;
   return `
@@ -1048,6 +1093,28 @@ function attachHandlers(){
       row.querySelector('.svc-price').addEventListener('change', e=>{ sv.price = Number(e.target.value)||0; delete sv.seed; saveDB(); });
       row.querySelector('.svc-del').addEventListener('click', ()=>{ db.services = db.services.filter(x=>x.id!==sv.id); saveDB(); render(); });
     });
+  }
+
+  // Lists view
+  document.querySelectorAll('.listtab').forEach(b=> b.addEventListener('click', ()=>{ listTab = b.dataset.list; render(); }));
+  const todoInput = document.getElementById('todoInput');
+  if(todoInput){
+    const addTodo = ()=>{
+      const text = todoInput.value.trim();
+      if(!text){ todoInput.focus(); return; }
+      db.todos.push({ id: uid(), text, list: listTab, done: false, created: Date.now() });
+      saveDB(); render();
+      const again = document.getElementById('todoInput'); if(again) again.focus();
+    };
+    document.getElementById('todoAddBtn').addEventListener('click', addTodo);
+    todoInput.addEventListener('keydown', e=>{ if(e.key==='Enter') addTodo(); });
+    document.querySelectorAll('.todo-row').forEach(row=>{
+      const t = db.todos.find(x=>x.id===row.dataset.todo); if(!t) return;
+      row.querySelector('.todo-check').addEventListener('change', e=>{ t.done = e.target.checked; t.doneAt = t.done ? Date.now() : 0; saveDB(); render(); });
+      row.querySelector('.todo-del').addEventListener('click', ()=>{ db.todos = db.todos.filter(x=>x.id!==t.id); saveDB(); render(); });
+    });
+    const clr = document.getElementById('clearDoneBtn');
+    if(clr) clr.addEventListener('click', ()=>{ db.todos = db.todos.filter(x=>!(x.list===listTab && x.done)); saveDB(); render(); });
   }
 
   // Quotes view
