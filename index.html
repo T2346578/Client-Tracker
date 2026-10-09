@@ -85,12 +85,18 @@
   /* schedule */
   .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
   .cal-head .navarrows button{background:none;border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;color:var(--ink);font-size:0.95rem;}
-  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;}
   .cal-dow{font-size:0.72rem;color:var(--ink-soft);text-align:center;font-weight:700;padding-bottom:4px;}
-  .cal-cell{min-height:78px;border:1px solid var(--line);border-radius:8px;padding:5px;font-size:0.75rem;background:var(--card);}
+  .cal-cell{min-width:0;overflow:hidden;cursor:pointer;min-height:78px;border:1px solid var(--line);border-radius:8px;padding:5px;font-size:0.75rem;background:var(--card);}
   .cal-cell.other{opacity:0.35;}
   .cal-cell.today{border-color:var(--green);}
   .cal-daynum{font-weight:700;margin-bottom:3px;}
+  .appt.done{opacity:.6;text-decoration:line-through;}
+  .dots{display:none;}
+  .agenda{display:none;margin-top:14px;}
+  #quoteYearSel{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:16px;min-height:40px;}
+  a.btn{display:inline-block;text-decoration:none;text-align:center;}
+  .row2>*,.li-row>*,.pick-row>*{min-width:0;}
   .appt{background:var(--green-soft);color:var(--green-dark);border-radius:5px;padding:2px 5px;margin-bottom:2px;font-size:0.68rem;
     font-weight:600;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
@@ -106,7 +112,7 @@
   .status-paid{background:var(--green-soft);color:var(--green-dark);}
 
   .li-row{display:grid;grid-template-columns:1fr 70px 90px 26px;gap:8px;align-items:center;margin-bottom:8px;}
-  .li-row input{padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.85rem;}
+  .li-row input{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:0.85rem;}
   .rm{background:none;border:none;color:var(--red);cursor:pointer;font-size:1.05rem;}
   .totals{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:0.88rem;}
   .totals .trow{display:flex;justify-content:space-between;padding:3px 0;color:var(--ink-soft);}
@@ -133,6 +139,40 @@
     .bottomnav button{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:3px;
       color:var(--ink-soft);font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;}
     .bottomnav button.active{color:var(--green-dark);}
+    /* calendar: compact day cells with dots, jobs listed below */
+    .card{max-width:100%;}
+    .cal-grid{gap:4px;}
+    .cal-cell{min-height:54px;padding:6px 2px 4px;display:flex;flex-direction:column;align-items:center;gap:4px;}
+    .cal-cell .appt{display:none;}
+    .cal-daynum{margin:0;font-size:0.9rem;}
+    .cal-cell.sel{background:var(--green-soft);border-color:var(--green);}
+    .dots{display:flex;gap:3px;justify-content:center;align-items:center;min-height:7px;}
+    .dot{width:6px;height:6px;border-radius:50%;background:var(--green);}
+    .dot.done{opacity:.35;}
+    .dots small{font-size:0.62rem;color:var(--ink-soft);line-height:1;}
+    .agenda{display:block;}
+    .agenda-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);}
+    .agenda-head b{font-size:0.98rem;}
+    /* touch-friendly controls */
+    .btn{min-height:44px;}
+    .btn.small{min-height:38px;}
+    .cal-head .navarrows button{min-width:44px;min-height:40px;}
+    .tabbtn,.listtab{min-height:38px;padding:8px 14px;}
+    .field input,.field select,.field textarea,.li-row input,.svc-row input,.it-pick,.todo-add input{font-size:16px;min-height:44px;}
+    .field textarea{min-height:80px;}
+    .field{margin-bottom:16px;}
+    .rm{min-width:40px;min-height:40px;}
+    /* pop-ups */
+    .overlay{padding:12px;}
+    .modal{padding:18px;max-width:100%;}
+    .row2{gap:12px;}
+    .li-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px;gap:10px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line);}
+    .li-row .it-desc-wrap{grid-column:1/-1;}
+    .svc-row{grid-template-columns:minmax(0,1fr) 84px 40px;}
+    .modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px;}
+    .modal-actions .btn{width:100%;}
+    .modal-actions .btn:last-child:nth-child(odd){grid-column:1/-1;}
+    .topline{margin-bottom:16px;}
     .brand-mobile{font-weight:800;font-size:1.2rem;margin-bottom:16px;}
     .brand-mobile span{color:var(--green);}
   }
@@ -205,7 +245,7 @@ const FF = window.FF = {
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
-const METHODS = { etransfer:'E-transfer', cash:'Cash' };
+const METHODS = { etransfer:'E‑transfer', cash:'Cash' };
 function methodLabel(m){ return METHODS[m] || ''; }
 function migrateQuotes(d){
   let changed = false;
@@ -270,6 +310,8 @@ if(!db.todos) db.todos = [];
 let view = 'clients';
 let listTab = 'buy';
 let calMonth = new Date(); calMonth.setDate(1);
+let selDate = todayISO();
+const isPhone = ()=> window.matchMedia('(max-width: 760px)').matches;
 let quoteFilter = 'all';
 let quoteYear = String(new Date().getFullYear());
 
@@ -388,22 +430,36 @@ function renderSchedule(){
 
   const cellsHtml = cells.map(c=>{
     const isToday = !c.other && c.y===today.getFullYear() && c.m===today.getMonth() && c.d===today.getDate();
-    let apptsHtml = '';
+    let apptsHtml = '', dotsHtml = '', dateStr = '';
     if(!c.other){
-      const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(c.d).padStart(2,'0')}`;
+      dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(c.d).padStart(2,'0')}`;
       const dayJobs = db.jobs.filter(j=>j.date===dateStr);
+      dotsHtml = `<div class="dots">${dayJobs.slice(0,3).map(j=>`<span class="dot ${j.completed?'done':''}"></span>`).join('')}${dayJobs.length>3?`<small>+${dayJobs.length-3}</small>`:''}</div>`;
       apptsHtml = dayJobs.map(j=>{
         const client = db.clients.find(cl=>cl.id===j.clientId);
-        return `<div class="appt" data-job="${j.id}">${esc((client&&client.name)||j.title)}</div>`;
+        return `<div class="appt ${j.completed?'done':''}" data-job="${j.id}">${j.completed?'✓ ':''}${esc((client&&client.name)||j.title)}</div>`;
       }).join('');
     }
-    return `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''}" ${!c.other?`data-day="${c.d}"`:''}>
-      <div class="cal-daynum">${c.d}</div>${apptsHtml}</div>`;
+    return `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''} ${dateStr&&dateStr===selDate?'sel':''}" ${!c.other?`data-day="${c.d}" data-date="${dateStr}"`:''}>
+      <div class="cal-daynum">${c.d}</div>${dotsHtml}${apptsHtml}</div>`;
   }).join('');
 
+  const dayJobs = db.jobs.filter(j=>j.date===selDate).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  const selLabel = selDate ? new Date(selDate+'T00:00:00').toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'}) : '';
+  const agendaHtml = `
+    <div class="card agenda">
+      <div class="agenda-head"><b>${esc(selLabel)}</b><button class="btn small" id="agendaAddBtn">+ Book job</button></div>
+      ${dayJobs.length ? dayJobs.map(j=>{
+        const cl = db.clients.find(c=>c.id===j.clientId);
+        return `<div class="list-row" data-agenda-job="${j.id}">
+          <div style="min-width:0;"><div class="name">${j.completed?'✓ ':''}${esc((cl&&cl.name)||'Client')}</div>
+          <div class="meta">${esc(j.title)}</div></div>
+          <div class="meta" style="white-space:nowrap;">${esc(j.time||'')}</div></div>`;
+      }).join('') : `<div class="empty" style="padding:26px 16px;">No jobs this day</div>`}
+    </div>`;
   return `
     <div class="topline">
-      <div><h1>Schedule</h1><div class="sub">Tap a day to book a job</div></div>
+      <div><h1>Schedule</h1><div class="sub">${isPhone()?'Tap a day to see or book jobs':'Tap a day to book a job'}</div></div>
       <button class="btn" id="addJobBtn">+ New job</button>
     </div>
     <div class="card" style="padding:16px;">
@@ -419,6 +475,7 @@ function renderSchedule(){
         ${cellsHtml}
       </div>
     </div>
+    ${agendaHtml}
   `;
 }
 
@@ -445,16 +502,35 @@ function jobForm(prefillDate){
     </div>`;
 }
 
+function completeJob(j){
+  j.completed = true; j.completedAt = j.completedAt || Date.now();
+  saveDB();
+  const sv = db.services.find(x=>(x.name||'').trim().toLowerCase()===(j.title||'').trim().toLowerCase());
+  workingQuote = quoteFormState(null);
+  workingQuote.clientId = j.clientId;
+  workingQuote.kind = 'invoice';
+  workingQuote.jobId = j.id;
+  workingQuote.items = [{ desc: j.title || 'Job', qty: 1, price: sv ? (Number(sv.price)||0) : 0, svc: sv ? sv.id : '' }];
+  render();                                   // calendar now shows the job as completed
+  openModal(quoteFormHtml()); bindQuoteFormActions();
+}
+
 function jobDetail(j){
   const client = db.clients.find(c=>c.id===j.clientId);
   return `
     <h2>${esc(j.title)}</h2>
     <div class="meta">${client?esc(client.name):'Unknown client'}</div>
     <div class="meta">${j.date} at ${j.time||'—'}</div>
+    ${j.completed?`<div style="margin-top:8px;"><span class="status-pill status-paid">✓ Completed</span></div>`:''}
     ${j.notes?`<div class="field" style="margin-top:10px;">${esc(j.notes)}</div>`:''}
-    <div class="modal-actions">
+    <div class="modal-actions" style="flex-wrap:wrap;">
       <button class="btn danger" id="deleteJobBtn">Delete</button>
       <button class="btn ghost" id="cancelBtn">Close</button>
+      ${!j.completed
+        ? `<button class="btn" id="completeJobBtn">Complete job</button>`
+        : (db.quotes.some(q=>q.id===j.quoteId)
+            ? `<button class="btn" id="viewJobInvoiceBtn">View invoice</button>`
+            : `<button class="btn" id="completeJobBtn">Create invoice</button>`)}
     </div>`;
 }
 
@@ -726,6 +802,7 @@ function quoteFormHtml(){
   const total = quoteTotal(q);
   return `
     <h2>${q.num?('#'+q.num+' — '):''}${q.kind==='invoice'?'Invoice':'Quote'}</h2>
+    ${q.jobId?'<div class="meta" style="margin-bottom:10px;">Job completed. Enter the amount and how the client paid.</div>':''}
     ${db.clients.length===0?'<div class="meta" style="margin-bottom:10px;">Add a client first.</div>':''}
     <div class="field"><label>Client</label><select id="f_qclient">${opts}</select></div>
     <div class="row2">
@@ -745,6 +822,7 @@ function quoteFormHtml(){
       <button class="btn ghost" id="saveDraftBtn">Save draft</button>
       <button class="btn" id="makeReceiptFormBtn" ${db.clients.length===0?'disabled':''}>Make receipt</button>
       <button class="btn" id="sendQuoteBtn" ${db.clients.length===0?'disabled':''}>Save & mark sent</button>
+      <button class="btn" id="savePaidBtn" ${db.clients.length===0?'disabled':''}>Save as paid</button>
     </div>`;
 }
 
@@ -1000,23 +1078,35 @@ function attachHandlers(){
   const prevM = document.getElementById('prevMonth'), nextM = document.getElementById('nextMonth');
   if(prevM) prevM.addEventListener('click', ()=>{ calMonth.setMonth(calMonth.getMonth()-1); render(); });
   if(nextM) nextM.addEventListener('click', ()=>{ calMonth.setMonth(calMonth.getMonth()+1); render(); });
+  function openJob(j){
+    openModal(jobDetail(j));
+    document.getElementById('deleteJobBtn').addEventListener('click', ()=>{ db.jobs = db.jobs.filter(x=>x.id!==j.id); saveDB(); closeModal(); render(); });
+    document.getElementById('cancelBtn').addEventListener('click', closeModal);
+    const cjBtn = document.getElementById('completeJobBtn');
+    if(cjBtn) cjBtn.addEventListener('click', ()=> completeJob(j));
+    const vjBtn = document.getElementById('viewJobInvoiceBtn');
+    if(vjBtn) vjBtn.addEventListener('click', ()=>{
+      const q = db.quotes.find(x=>x.id===j.quoteId);
+      openModal(quoteDetail(q)); bindQuoteDetailActions(q);
+    });
+  }
   document.querySelectorAll('.cal-cell[data-day]').forEach(cell=>{
     cell.addEventListener('click', (e)=>{
       if(e.target.closest('.appt')) return;
-      const y = calMonth.getFullYear(), m = calMonth.getMonth();
-      const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(cell.dataset.day).padStart(2,'0')}`;
-      openModal(jobForm(dateStr)); bindJobFormActions(null);
+      const dateStr = cell.dataset.date;
+      if(isPhone()){ selDate = dateStr; render(); return; }       // phone: select the day, jobs list below
+      openModal(jobForm(dateStr)); bindJobFormActions(null);      // computer: book straight away
     });
   });
   document.querySelectorAll('.appt').forEach(a=>{
     a.addEventListener('click', (e)=>{
       e.stopPropagation();
-      const j = db.jobs.find(x=>x.id===a.dataset.job);
-      openModal(jobDetail(j));
-      document.getElementById('deleteJobBtn').addEventListener('click', ()=>{ db.jobs = db.jobs.filter(x=>x.id!==j.id); saveDB(); closeModal(); render(); });
-      document.getElementById('cancelBtn').addEventListener('click', closeModal);
+      openJob(db.jobs.find(x=>x.id===a.dataset.job));
     });
   });
+  document.querySelectorAll('[data-agenda-job]').forEach(r=> r.addEventListener('click', ()=> openJob(db.jobs.find(x=>x.id===r.dataset.agendaJob))));
+  const agendaAdd = document.getElementById('agendaAddBtn');
+  if(agendaAdd) agendaAdd.addEventListener('click', ()=>{ openModal(jobForm(selDate)); bindJobFormActions(null); });
 
   // Settings view
   const saveSettingsBtn = document.getElementById('saveSettingsBtn');
@@ -1191,6 +1281,7 @@ function bindJobFormActions(existing){
     const notes = document.getElementById('f_notes').value.trim();
     if(!date) return;
     db.jobs.push({ id: uid(), clientId, title, date, time, notes });
+    selDate = date;
     saveDB(); closeModal(); render();
   });
 }
@@ -1210,12 +1301,18 @@ function bindQuoteFormActions(){
     const idx = db.quotes.findIndex(q=>q.id===workingQuote.id);
     if(idx>=0) db.quotes[idx] = workingQuote; else db.quotes.push(workingQuote);
     const saved = workingQuote;
+    if(saved.jobId){ const jb = db.jobs.find(x=>x.id===saved.jobId); if(jb) jb.quoteId = saved.id; }
     saveDB(); workingQuote=null; closeModal(); render();
     if(after) after(saved);
   }
   document.getElementById('makeReceiptFormBtn').addEventListener('click', ()=> persist(workingQuote.status||'draft', makeReceipt));
   document.getElementById('saveDraftBtn').addEventListener('click', ()=> persist('draft'));
   document.getElementById('sendQuoteBtn').addEventListener('click', ()=> persist('sent'));
+  document.getElementById('savePaidBtn').addEventListener('click', ()=>{
+    const m = document.getElementById('f_qmethod');
+    if(!m.value){ m.style.borderColor = 'var(--red)'; m.focus(); return; }   // need cash or e-transfer for tax records
+    persist('paid');
+  });
 }
 
 function bindQuoteDetailActions(q){
