@@ -92,6 +92,9 @@
   .cal-cell.today{border-color:var(--green);}
   .cal-daynum{font-weight:700;margin-bottom:3px;}
   .appt.done{opacity:.6;text-decoration:line-through;}
+  .nbadge{background:var(--red);color:#fff;border-radius:10px;font-size:0.65rem;font-weight:700;padding:1px 6px;margin-left:6px;line-height:1.4;}
+  .remind-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-top:1px solid var(--line);}
+  .remind-row > div{min-width:0;}
   .dots{display:none;}
   .agenda{display:none;margin-top:14px;}
   #quoteYearSel{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:16px;min-height:40px;}
@@ -139,6 +142,8 @@
     .bottomnav button{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:3px;
       color:var(--ink-soft);font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;}
     .bottomnav button.active{color:var(--green-dark);}
+    .bottomnav button{position:relative;}
+    .bottomnav .nbadge{position:absolute;top:2px;left:calc(50% + 12px);margin:0;}
     /* calendar: compact day cells with dots, jobs listed below */
     .card{max-width:100%;}
     .cal-grid{gap:4px;}
@@ -349,6 +354,7 @@ function render(){
   else if(view==='lists') main.innerHTML = renderLists();
   else main.innerHTML = renderQuotes();
   attachHandlers();
+  updateBadges();
 }
 
 // ================= CLIENTS =================
@@ -457,11 +463,23 @@ function renderSchedule(){
           <div class="meta" style="white-space:nowrap;">${esc(j.time||'')}</div></div>`;
       }).join('') : `<div class="empty" style="padding:26px 16px;">No jobs this day</div>`}
     </div>`;
+  const due = dueReminders();
+  const remindHtml = due.length ? `
+    <div class="card" style="margin-bottom:14px;">
+      <div style="padding:14px 16px;font-weight:700;">🔔 Reminders to send <span class="meta" style="font-weight:400;">(jobs in the next day)</span></div>
+      ${due.map(j=>{
+        const cl = db.clients.find(c=>c.id===j.clientId);
+        return `<div class="remind-row"><div><div class="name">${esc((cl&&cl.name)||'Client')}</div>
+          <div class="meta">${esc(j.title)} · ${esc(whenWord(j))}${j.time?' at '+fmtTime(j.time):''}</div></div>
+          <button class="btn small" data-remind="${j.id}">Send reminder</button></div>`;
+      }).join('')}
+    </div>` : '';
   return `
     <div class="topline">
       <div><h1>Schedule</h1><div class="sub">${isPhone()?'Tap a day to see or book jobs':'Tap a day to book a job'}</div></div>
       <button class="btn" id="addJobBtn">+ New job</button>
     </div>
+    ${remindHtml}
     <div class="card" style="padding:16px;">
       <div class="cal-head">
         <div class="navarrows" style="display:flex;gap:8px;">
@@ -521,11 +539,16 @@ function jobDetail(j){
     <h2>${esc(j.title)}</h2>
     <div class="meta">${client?esc(client.name):'Unknown client'}</div>
     <div class="meta">${j.date} at ${j.time||'—'}</div>
-    ${j.completed?`<div style="margin-top:8px;"><span class="status-pill status-paid">✓ Completed</span></div>`:''}
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+      ${j.completed?`<span class="status-pill status-paid">✓ Completed</span>`:''}
+      ${j.confirmedAt?`<span class="status-pill status-sent">Confirmation texted</span>`:''}
+      ${j.remindedAt?`<span class="status-pill status-sent">Reminder texted</span>`:''}
+    </div>
     ${j.notes?`<div class="field" style="margin-top:10px;">${esc(j.notes)}</div>`:''}
     <div class="modal-actions" style="flex-wrap:wrap;">
       <button class="btn danger" id="deleteJobBtn">Delete</button>
       <button class="btn ghost" id="cancelBtn">Close</button>
+      ${!j.completed ? `<button class="btn ghost" id="textJobBtn">Text client</button>` : ''}
       ${!j.completed
         ? `<button class="btn" id="completeJobBtn">Complete job</button>`
         : (db.quotes.some(q=>q.id===j.quoteId)
@@ -1084,6 +1107,8 @@ function attachHandlers(){
     document.getElementById('cancelBtn').addEventListener('click', closeModal);
     const cjBtn = document.getElementById('completeJobBtn');
     if(cjBtn) cjBtn.addEventListener('click', ()=> completeJob(j));
+    const tjBtn = document.getElementById('textJobBtn');
+    if(tjBtn) tjBtn.addEventListener('click', ()=> textPopup(j, j.confirmedAt ? 'reminder' : 'confirm'));
     const vjBtn = document.getElementById('viewJobInvoiceBtn');
     if(vjBtn) vjBtn.addEventListener('click', ()=>{
       const q = db.quotes.find(x=>x.id===j.quoteId);
@@ -1105,6 +1130,7 @@ function attachHandlers(){
     });
   });
   document.querySelectorAll('[data-agenda-job]').forEach(r=> r.addEventListener('click', ()=> openJob(db.jobs.find(x=>x.id===r.dataset.agendaJob))));
+  document.querySelectorAll('[data-remind]').forEach(b=> b.addEventListener('click', ()=> textPopup(db.jobs.find(x=>x.id===b.dataset.remind), 'reminder')));
   const agendaAdd = document.getElementById('agendaAddBtn');
   if(agendaAdd) agendaAdd.addEventListener('click', ()=>{ openModal(jobForm(selDate)); bindJobFormActions(null); });
 
@@ -1264,6 +1290,68 @@ function bindClientDetailActions(c){
   });
 }
 
+// ---------- texting clients (opens the phone's Messages app with the text ready) ----------
+function fmtTime(t){ if(!t) return ''; const [h,m]=t.split(':').map(Number); return `${((h+11)%12)+1}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`; }
+function firstName(n){ return (n||'').trim().split(/\s+/)[0] || 'there'; }
+function smsHref(num, body){ return `sms:${(num||'').replace(/[^\d+]/g,'')}?body=${encodeURIComponent(body)}`; }
+function jobStart(j){ return new Date(j.date + 'T' + (j.time||'09:00') + ':00'); }
+function whenWord(j){
+  const d = new Date(j.date+'T00:00:00'), t0 = new Date(); t0.setHours(0,0,0,0);
+  const diff = Math.round((d - t0)/86400000);
+  if(diff===0) return 'today';
+  if(diff===1) return 'tomorrow';
+  return d.toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric'});
+}
+function jobText(j, kind){
+  const c = db.clients.find(x=>x.id===j.clientId) || {};
+  const biz = db.settings.businessName || 'us';
+  const at = j.time ? ` at ${fmtTime(j.time)}` : '';
+  if(kind==='reminder') return `Hi ${firstName(c.name)}, a reminder from ${biz}: your ${j.title} is ${whenWord(j)}${at}. See you then!`;
+  const day = new Date(j.date+'T00:00:00').toLocaleDateString('en-CA',{weekday:'long',month:'long',day:'numeric'});
+  return `Hi ${firstName(c.name)}, this is ${biz}. Your ${j.title} is booked for ${day}${at}. Reply here if you need to change it.`;
+}
+function dueReminders(){
+  const now = Date.now(), end = now + 36*3600*1000;
+  return db.jobs.filter(j=>{
+    if(j.completed || j.remindedAt) return false;
+    const t = jobStart(j).getTime();
+    return t >= now && t <= end;
+  }).sort((a,b)=> jobStart(a) - jobStart(b));
+}
+function updateBadges(){
+  const n = dueReminders().length;
+  document.querySelectorAll('[data-view="schedule"]').forEach(b=>{
+    const old = b.querySelector('.nbadge'); if(old) old.remove();
+    if(n>0){ const sp = document.createElement('span'); sp.className='nbadge'; sp.textContent=n; b.appendChild(sp); }
+  });
+}
+function textPopup(j, kind){
+  const c = db.clients.find(x=>x.id===j.clientId) || {};
+  const isRem = kind==='reminder';
+  openModal(`
+    <h2>${isRem ? 'Send a reminder?' : 'Booking saved ✓'}</h2>
+    <div class="meta" style="margin-bottom:14px;">${isRem ? 'Text' : 'Send'} ${esc(c.name||'the client')} ${isRem ? 'a reminder' : 'a booking confirmation'}?</div>
+    <div class="field"><label>Client's mobile number</label>
+      <input id="tx_phone" type="tel" inputmode="tel" autocomplete="off" value="${esc(c.phone||'')}" placeholder="(555) 555-1234"></div>
+    <div class="field"><label>Message</label><textarea id="tx_msg" rows="5">${esc(jobText(j, kind))}</textarea></div>
+    <div class="meta">This opens your phone's Messages app with the text ready. Tap send there.</div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="txSkip">${isRem ? 'Not now' : "Don't send"}</button>
+      <button class="btn" id="txSend">${isRem ? 'Send reminder' : 'Send confirmation'}</button>
+    </div>`);
+  document.getElementById('txSkip').addEventListener('click', closeModal);
+  document.getElementById('txSend').addEventListener('click', ()=>{
+    const phoneEl = document.getElementById('tx_phone');
+    const phone = phoneEl.value.trim();
+    if(!phone){ phoneEl.style.borderColor='var(--red)'; phoneEl.focus(); return; }
+    const body = document.getElementById('tx_msg').value;
+    if(c.id && c.phone !== phone) c.phone = phone;           // remember the number on the client
+    if(isRem) j.remindedAt = Date.now(); else j.confirmedAt = Date.now();
+    saveDB(); closeModal(); render();
+    window.location.href = smsHref(phone, body);
+  });
+}
+
 function bindJobFormActions(existing){
   document.getElementById('cancelBtn').addEventListener('click', closeModal);
   const svcSel = document.getElementById('f_service');
@@ -1280,9 +1368,11 @@ function bindJobFormActions(existing){
     const time = document.getElementById('f_time').value;
     const notes = document.getElementById('f_notes').value.trim();
     if(!date) return;
-    db.jobs.push({ id: uid(), clientId, title, date, time, notes });
+    const job = { id: uid(), clientId, title, date, time, notes };
+    db.jobs.push(job);
     selDate = date;
-    saveDB(); closeModal(); render();
+    saveDB(); render();
+    textPopup(job, 'confirm');
   });
 }
 
