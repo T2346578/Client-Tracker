@@ -497,26 +497,26 @@ function renderSchedule(){
   `;
 }
 
-function jobForm(prefillDate){
-  const opts = db.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+function jobForm(prefillDate, job){
+  const opts = db.clients.map(c=>`<option value="${c.id}" ${job&&job.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   return `
-    <h2>New job</h2>
+    <h2>${job?'Edit job':'New job'}</h2>
     ${db.clients.length===0?'<div class="meta" style="margin-bottom:10px;">Add a client first.</div>':''}
     <div class="field"><label>Client</label><select id="f_client">${opts}</select></div>
     <div class="field"><label>Job title</label>
       <div class="pick-row" style="margin-bottom:6px;">
         <select id="f_service">${serviceOptions()}</select>
       </div>
-      <input id="f_title" placeholder="Pick a service above or type your own">
+      <input id="f_title" placeholder="Pick a service above or type your own" value="${job?esc(job.title):''}">
     </div>
     <div class="row2">
-      <div class="field"><label>Date</label><input type="date" id="f_date" value="${prefillDate||''}"></div>
-      <div class="field"><label>Time</label><input type="time" id="f_time" value="09:00"></div>
+      <div class="field"><label>Date</label><input type="date" id="f_date" value="${job?job.date:(prefillDate||'')}"></div>
+      <div class="field"><label>Time</label><input type="time" id="f_time" value="${job?(job.time||''):'09:00'}"></div>
     </div>
-    <div class="field"><label>Notes</label><textarea id="f_notes" placeholder="Instructions for the crew"></textarea></div>
+    <div class="field"><label>Notes</label><textarea id="f_notes" placeholder="Instructions for the crew">${job?esc(job.notes||''):''}</textarea></div>
     <div class="modal-actions">
       <button class="btn ghost" id="cancelBtn">Cancel</button>
-      <button class="btn" id="saveJobBtn" ${db.clients.length===0?'disabled':''}>Book job</button>
+      <button class="btn" id="saveJobBtn" ${db.clients.length===0?'disabled':''}>${job?'Save changes':'Book job'}</button>
     </div>`;
 }
 
@@ -548,6 +548,7 @@ function jobDetail(j){
     <div class="modal-actions" style="flex-wrap:wrap;">
       <button class="btn danger" id="deleteJobBtn">Delete</button>
       <button class="btn ghost" id="cancelBtn">Close</button>
+      <button class="btn ghost" id="editJobBtn">Edit</button>
       ${!j.completed ? `<button class="btn ghost" id="textJobBtn">Text client</button>` : ''}
       ${!j.completed
         ? `<button class="btn" id="completeJobBtn">Complete job</button>`
@@ -1103,8 +1104,12 @@ function attachHandlers(){
   if(nextM) nextM.addEventListener('click', ()=>{ calMonth.setMonth(calMonth.getMonth()+1); render(); });
   function openJob(j){
     openModal(jobDetail(j));
-    document.getElementById('deleteJobBtn').addEventListener('click', ()=>{ db.jobs = db.jobs.filter(x=>x.id!==j.id); saveDB(); closeModal(); render(); });
+    document.getElementById('deleteJobBtn').addEventListener('click', ()=>{
+      if(!confirm('Delete this booking? This can\'t be undone.')) return;
+      db.jobs = db.jobs.filter(x=>x.id!==j.id); saveDB(); closeModal(); render();
+    });
     document.getElementById('cancelBtn').addEventListener('click', closeModal);
+    document.getElementById('editJobBtn').addEventListener('click', ()=>{ openModal(jobForm(null, j)); bindJobFormActions(j); });
     const cjBtn = document.getElementById('completeJobBtn');
     if(cjBtn) cjBtn.addEventListener('click', ()=> completeJob(j));
     const tjBtn = document.getElementById('textJobBtn');
@@ -1368,6 +1373,15 @@ function bindJobFormActions(existing){
     const time = document.getElementById('f_time').value;
     const notes = document.getElementById('f_notes').value.trim();
     if(!date) return;
+    if(existing){
+      const moved = existing.date !== date || (existing.time||'') !== time;
+      Object.assign(existing, { clientId, title, date, time, notes });
+      if(moved) existing.remindedAt = 0;                 // new time, so a new reminder is needed
+      selDate = date;
+      saveDB(); closeModal(); render();
+      if(moved && existing.confirmedAt) textPopup(existing, 'confirm');   // offer to tell the client about the new time
+      return;
+    }
     const job = { id: uid(), clientId, title, date, time, notes };
     db.jobs.push(job);
     selDate = date;
