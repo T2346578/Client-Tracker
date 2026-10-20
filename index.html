@@ -94,6 +94,14 @@
   .appt.done{opacity:.6;text-decoration:line-through;}
   .dots{display:none;}
   .agenda{display:none;margin-top:14px;}
+  .filters{padding:14px 16px;margin-bottom:14px;}
+  .filters input,.filters select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:16px;min-height:44px;}
+  .filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px;}
+  .month-card{margin-bottom:14px;overflow:hidden;}
+  .month-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 16px;background:var(--green-soft);border-bottom:1px solid var(--line);cursor:pointer;font-weight:700;user-select:none;}
+  .month-head .meta{font-weight:400;text-align:right;}
+  .month-head .chev{display:inline-block;width:1em;color:var(--green-dark);}
+  .month-card .list-row:last-child{border-bottom:none;}
   #quoteYearSel{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-family:inherit;font-size:16px;min-height:40px;}
   a.btn{display:inline-block;text-decoration:none;text-align:center;}
   .row2>*,.li-row>*,.pick-row>*{min-width:0;}
@@ -313,6 +321,8 @@ let calMonth = new Date(); calMonth.setDate(1);
 let selDate = todayISO();
 const isPhone = ()=> window.matchMedia('(max-width: 760px)').matches;
 let quoteFilter = 'all';
+let quoteSearch = '', quoteClient = 'all', quoteMethod = 'all', quoteMonth = 'all';
+const collapsedMonths = new Set();
 let quoteYear = String(new Date().getFullYear());
 
 function uid(){ return Math.random().toString(36).slice(2,9); }
@@ -743,19 +753,59 @@ function bindAuthForm(){
 // ================= QUOTES / INVOICES =================
 function quoteTotal(q){ return q.items.reduce((s,it)=> s + (Number(it.qty)||0)*(Number(it.price)||0), 0); }
 
-function renderQuotes(){
-  const filtered = quoteFilter==='all' ? db.quotes : db.quotes.filter(q=>q.status===quoteFilter);
-  const sorted = [...filtered].sort((a,b)=>b.num-a.num);
-  const rows = sorted.map(q=>{
+function quoteMonthKey(q){ return q.date ? q.date.slice(0,7) : 'none'; }
+function quoteMonthLabel(k){
+  if(k==='none') return 'No date';
+  return new Date(k+'-01T00:00:00').toLocaleDateString('en-CA',{month:'long',year:'numeric'});
+}
+function filteredQuotes(){
+  const text = quoteSearch.trim().toLowerCase().replace(/^#/,'');
+  return db.quotes.filter(q=>{
+    if(quoteFilter!=='all' && q.status!==quoteFilter) return false;
+    if(quoteClient!=='all' && q.clientId!==quoteClient) return false;
+    if(quoteMethod==='none' ? !!q.method : (quoteMethod!=='all' && q.method!==quoteMethod)) return false;
+    if(quoteMonth!=='all' && quoteMonthKey(q)!==quoteMonth) return false;
+    if(text){
+      const c = db.clients.find(x=>x.id===q.clientId);
+      if(!((c&&c.name||'').toLowerCase().includes(text) || String(q.num).includes(text))) return false;
+    }
+    return true;
+  });
+}
+function quoteListHtml(){
+  const list = filteredQuotes();
+  if(!list.length){
+    return db.quotes.length
+      ? `<div class="card"><div class="empty"><b>No matches</b>Try clearing a filter.</div></div>`
+      : `<div class="card"><div class="empty"><b>No quotes yet</b>Create a quote to send pricing to a customer.</div></div>`;
+  }
+  const groups = {};
+  list.forEach(q=>{ (groups[quoteMonthKey(q)] = groups[quoteMonthKey(q)] || []).push(q); });
+  const keys = Object.keys(groups).sort((a,b)=> a==='none' ? 1 : b==='none' ? -1 : b.localeCompare(a));
+  const row = q=>{
     const client = db.clients.find(c=>c.id===q.clientId);
     return `<div class="list-row" data-quote="${q.id}">
-      <div>
+      <div style="min-width:0;">
         <div class="name">#${q.num} — ${client?esc(client.name):'No client'}</div>
         <div class="meta">${q.kind==='invoice'?'Invoice':'Quote'} · ${fmt(quoteTotal(q))}${q.date?' · '+fmtDate(q.date):''}${q.status==='paid'&&q.method?' · '+methodLabel(q.method):''}</div>
       </div>
       <span class="status-pill status-${q.status}">${q.status}</span>
     </div>`;
+  };
+  return `<div class="meta" style="margin:0 2px 10px;">Showing ${list.length} of ${db.quotes.length}</div>` + keys.map(k=>{
+    const items = groups[k].sort((a,b)=> (b.date||'').localeCompare(a.date||'') || b.num-a.num);
+    const received = items.filter(q=>q.status==='paid').reduce((t,q)=>t+quoteTotal(q),0);
+    const open = !collapsedMonths.has(k);
+    return `<div class="card month-card">
+      <div class="month-head" data-month="${k}">
+        <span><span class="chev">${open?'▾':'▸'}</span> ${esc(quoteMonthLabel(k))}</span>
+        <span class="meta">${items.length} item${items.length===1?'':'s'}${received?' · '+fmt(received)+' received':''}</span>
+      </div>
+      ${open ? items.map(row).join('') : ''}
+    </div>`;
   }).join('');
+}
+function renderQuotes(){
   const paidQ = db.quotes.filter(q=>q.status==='paid' && q.date);
   const years = [...new Set([quoteYear, ...paidQ.map(q=>q.date.slice(0,4))])].sort().reverse();
   const inYear = paidQ.filter(q=>q.date.slice(0,4)===quoteYear);
@@ -768,14 +818,33 @@ function renderQuotes(){
         <select id="quoteYearSel" style="width:auto;padding:5px 8px;">${years.map(y=>`<option ${y===quoteYear?'selected':''}>${y}</option>`).join('')}</select>
       </div>
       <div class="totals" style="margin-top:0;padding-top:0;border-top:none;">
-        <div class="trow"><span>E-transfer</span><span>${fmt(tEt)}</span></div>
+        <div class="trow"><span>${METHODS.etransfer}</span><span>${fmt(tEt)}</span></div>
         <div class="trow"><span>Cash</span><span>${fmt(tCash)}</span></div>
         ${tNone?`<div class="trow"><span>Method not set</span><span>${fmt(tNone)}</span></div>`:''}
         <div class="trow grand"><span>Total</span><span>${fmt(tEt+tCash+tNone)}</span></div>
       </div>
     </div>`;
-  const tabs = ['all','draft','sent','invoice','paid'].map(s=>
-    `<button class="tabbtn ${quoteFilter===s?'active':''}" data-filter="${s}">${s[0].toUpperCase()+s.slice(1)}</button>`).join('');
+  const count = st => st==='all' ? db.quotes.length : db.quotes.filter(q=>q.status===st).length;
+  const tabs = ['all','draft','sent','invoice','paid'].map(st=>
+    `<button class="tabbtn ${quoteFilter===st?'active':''}" data-filter="${st}">${st[0].toUpperCase()+st.slice(1)} (${count(st)})</button>`).join('');
+  const monthKeys = [...new Set(db.quotes.map(quoteMonthKey))].sort((a,b)=> a==='none' ? 1 : b==='none' ? -1 : b.localeCompare(a));
+  const clientIds = [...new Set(db.quotes.map(q=>q.clientId))];
+  const clientOpts = clientIds.map(id=>db.clients.find(c=>c.id===id)).filter(Boolean).sort((a,b)=>a.name.localeCompare(b.name));
+  const active = quoteSearch || quoteClient!=='all' || quoteMethod!=='all' || quoteMonth!=='all' || quoteFilter!=='all';
+  const filters = `
+    <div class="card filters">
+      <input id="quoteSearch" type="search" placeholder="Search by client name or #number" value="${esc(quoteSearch)}" autocomplete="off">
+      <div class="filter-grid">
+        <select id="qfMonth"><option value="all">All months</option>${monthKeys.map(k=>`<option value="${k}" ${quoteMonth===k?'selected':''}>${esc(quoteMonthLabel(k))}</option>`).join('')}</select>
+        <select id="qfClient"><option value="all">All clients</option>${clientOpts.map(c=>`<option value="${c.id}" ${quoteClient===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+        <select id="qfMethod">
+          <option value="all">Any payment</option>
+          ${Object.entries(METHODS).map(([k,v])=>`<option value="${k}" ${quoteMethod===k?'selected':''}>${v}</option>`).join('')}
+          <option value="none" ${quoteMethod==='none'?'selected':''}>Method not set</option>
+        </select>
+      </div>
+      ${active?`<button class="btn ghost small" id="qfClear" style="margin-top:10px;">Clear filters</button>`:''}
+    </div>`;
   return `
     <div class="topline">
       <div><h1>Quotes & Invoices</h1><div class="sub">${db.quotes.length} total</div></div>
@@ -783,7 +852,8 @@ function renderQuotes(){
     </div>
     ${summary}
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">${tabs}</div>
-    <div class="card">${rows || `<div class="empty"><b>No quotes yet</b>Create a quote to send pricing to a customer.</div>`}</div>
+    ${filters}
+    <div id="quoteList">${quoteListHtml()}</div>
   `;
 }
 
@@ -1221,6 +1291,22 @@ function attachHandlers(){
   const ySel = document.getElementById('quoteYearSel');
   if(ySel) ySel.addEventListener('change', ()=>{ quoteYear = ySel.value; render(); });
   document.querySelectorAll('.tabbtn').forEach(t=> t.addEventListener('click', ()=>{ quoteFilter = t.dataset.filter; render(); }));
+  const qSearch = document.getElementById('quoteSearch');
+  if(qSearch){
+    qSearch.addEventListener('input', ()=>{ quoteSearch = qSearch.value; refreshQuoteList(); });   // only the list updates, so typing isn't interrupted
+    document.getElementById('qfMonth').addEventListener('change', e=>{ quoteMonth = e.target.value; render(); });
+    document.getElementById('qfClient').addEventListener('change', e=>{ quoteClient = e.target.value; render(); });
+    document.getElementById('qfMethod').addEventListener('change', e=>{ quoteMethod = e.target.value; render(); });
+    const clr = document.getElementById('qfClear');
+    if(clr) clr.addEventListener('click', ()=>{ quoteSearch=''; quoteClient='all'; quoteMethod='all'; quoteMonth='all'; quoteFilter='all'; render(); });
+    bindQuoteRows();
+  }
+}
+function refreshQuoteList(){
+  const el = document.getElementById('quoteList'); if(!el) return;
+  el.innerHTML = quoteListHtml(); bindQuoteRows();
+}
+function bindQuoteRows(){
   document.querySelectorAll('[data-quote]').forEach(row=>{
     row.addEventListener('click', ()=>{
       const q = db.quotes.find(x=>x.id===row.dataset.quote);
@@ -1228,6 +1314,11 @@ function attachHandlers(){
       bindQuoteDetailActions(q);
     });
   });
+  document.querySelectorAll('[data-month]').forEach(h=> h.addEventListener('click', ()=>{
+    const k = h.dataset.month;
+    if(collapsedMonths.has(k)) collapsedMonths.delete(k); else collapsedMonths.add(k);
+    refreshQuoteList();
+  }));
 }
 
 function bindClientFormIfPresent(existing){
