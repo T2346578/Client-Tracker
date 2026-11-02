@@ -320,6 +320,7 @@ let listTab = 'buy';
 let calMonth = new Date(); calMonth.setDate(1);
 let selDate = todayISO();
 const isPhone = ()=> window.matchMedia('(max-width: 760px)').matches;
+let clientSort = 'az', clientFilter = 'all', clientSearch = '';
 let quoteFilter = 'all';
 let quoteSearch = '', quoteClient = 'all', quoteMethod = 'all', quoteMonth = 'all';
 const collapsedMonths = new Set();
@@ -362,23 +363,96 @@ function render(){
 }
 
 // ================= CLIENTS =================
-function renderClients(){
-  const rows = db.clients.map(c=>{
-    const paid = db.quotes.filter(q=>q.clientId===c.id && q.status==='paid').reduce((s,q)=>s+quoteTotal(q),0);
-    return `<div class="list-row" data-client="${c.id}">
-      <div>
+function clientStats(c){
+  const cq = db.quotes.filter(q=>q.clientId===c.id);
+  const paidQ = cq.filter(q=>q.status==='paid');
+  const owedQ = cq.filter(q=>q.status==='invoice' || (q.kind==='invoice' && q.status==='sent'));
+  const dates = paidQ.map(q=>q.date||'').filter(Boolean).sort();
+  return {
+    spent: paidQ.reduce((t,q)=>t+quoteTotal(q),0),
+    payments: paidQ.length,
+    owed: owedQ.reduce((t,q)=>t+quoteTotal(q),0),
+    last: dates.length ? dates[dates.length-1] : '',
+    upcoming: db.jobs.some(j=>j.clientId===c.id && !j.completed && j.date>=todayISO())
+  };
+}
+const CLIENT_SORTS = {
+  az:'Name A–Z', za:'Name Z–A', spent_desc:'Most spent', spent_asc:'Least spent',
+  recent:'Latest payment', visits:'Most payments'
+};
+const CLIENT_FILTERS = {
+  all:'All clients', owed:'Owes a balance', paid:'Has paid', never:'Never paid',
+  upcoming:'Upcoming booking', nophone:'No phone number'
+};
+function clientListHtml(){
+  const text = clientSearch.trim().toLowerCase();
+  let list = db.clients.map(c=>({ c, st: clientStats(c) })).filter(({c,st})=>{
+    if(text && ![c.name,c.phone,c.email,c.address].some(v=>(v||'').toLowerCase().includes(text))) return false;
+    switch(clientFilter){
+      case 'owed': return st.owed > 0;
+      case 'paid': return st.payments > 0;
+      case 'never': return st.payments === 0;
+      case 'upcoming': return st.upcoming;
+      case 'nophone': return !(c.phone||'').trim();
+    }
+    return true;
+  });
+  const byName = (a,b)=> (a.c.name||'').localeCompare(b.c.name||'', undefined, {sensitivity:'base'});
+  const sorters = {
+    az: byName,
+    za: (a,b)=> byName(b,a),
+    spent_desc: (a,b)=> b.st.spent - a.st.spent || byName(a,b),
+    spent_asc: (a,b)=> a.st.spent - b.st.spent || byName(a,b),
+    recent: (a,b)=> (b.st.last||'').localeCompare(a.st.last||'') || byName(a,b),
+    visits: (a,b)=> b.st.payments - a.st.payments || byName(a,b)
+  };
+  list.sort(sorters[clientSort] || byName);
+  if(!db.clients.length) return `<div class="card"><div class="empty"><b>No clients yet</b>Add your first client to start scheduling jobs and sending quotes.</div></div>`;
+  if(!list.length) return `<div class="card"><div class="empty"><b>No matches</b>Try clearing a filter.</div></div>`;
+  const totalSpent = list.reduce((t,x)=>t+x.st.spent,0);
+  const rows = list.map(({c,st})=>`<div class="list-row" data-client="${c.id}">
+      <div style="min-width:0;">
         <div class="name">${esc(c.name)}</div>
-        <div class="meta">${esc(c.address)||'No address'} · ${esc(c.phone)||'—'} · ${esc(c.email)||'—'}</div>
+        <div class="meta">${esc(c.phone)||'No phone'}${c.email?' · '+esc(c.email):''}</div>
+        <div class="meta">${st.payments} payment${st.payments===1?'':'s'}${st.last?' · last '+esc(fmtDate(st.last)):''}${st.upcoming?' · 📅 booked':''}</div>
       </div>
-      <div class="paid">${fmt(paid)}</div>
-    </div>`;
-  }).join('');
+      <div style="text-align:right;">
+        <div class="paid">${fmt(st.spent)}</div>
+        ${st.owed>0?`<div class="meta" style="color:var(--red);font-weight:700;">Owes ${fmt(st.owed)}</div>`:''}
+      </div>
+    </div>`).join('');
+  return `<div class="meta" style="margin:0 2px 10px;">Showing ${list.length} of ${db.clients.length} · ${fmt(totalSpent)} spent</div><div class="card">${rows}</div>`;
+}
+function refreshClientList(){
+  const el = document.getElementById('clientList'); if(!el) return;
+  el.innerHTML = clientListHtml(); bindClientRows();
+}
+function bindClientRows(){
+  document.querySelectorAll('[data-client]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const c = db.clients.find(x=>x.id===row.dataset.client);
+      openModal(clientDetail(c));
+      bindClientDetailActions(c);
+    });
+  });
+}
+function renderClients(){
+  const active = clientSearch || clientFilter!=='all' || clientSort!=='az';
   return `
     <div class="topline">
       <div><h1>Clients</h1><div class="sub">${db.clients.length} client${db.clients.length===1?'':'s'} · <span class="sync-label">${syncLabel()}</span></div></div>
       <button class="btn" id="addClientBtn">+ Add client</button>
     </div>
-    <div class="card">${rows || `<div class="empty"><b>No clients yet</b>Add your first client to start scheduling jobs and sending quotes.</div>`}</div>
+    ${db.clients.length ? `
+    <div class="card filters">
+      <input id="clientSearch" type="search" placeholder="Search clients" value="${esc(clientSearch)}" autocomplete="off">
+      <div class="filter-grid">
+        <select id="clSort" aria-label="Sort by">${Object.entries(CLIENT_SORTS).map(([k,v])=>`<option value="${k}" ${clientSort===k?'selected':''}>↕ ${v}</option>`).join('')}</select>
+        <select id="clFilter" aria-label="Filter">${Object.entries(CLIENT_FILTERS).map(([k,v])=>`<option value="${k}" ${clientFilter===k?'selected':''}>${v}</option>`).join('')}</select>
+      </div>
+      ${active?`<button class="btn ghost small" id="clClear" style="margin-top:10px;">Reset</button>`:''}
+    </div>` : ''}
+    <div id="clientList">${clientListHtml()}</div>
   `;
 }
 
@@ -1135,13 +1209,15 @@ function attachHandlers(){
   // Clients view
   const addClientBtn = document.getElementById('addClientBtn');
   if(addClientBtn) addClientBtn.addEventListener('click', ()=>{ openModal(clientForm(null)); bindClientFormIfPresent(null); });
-  document.querySelectorAll('[data-client]').forEach(row=>{
-    row.addEventListener('click', ()=>{
-      const c = db.clients.find(x=>x.id===row.dataset.client);
-      openModal(clientDetail(c));
-      bindClientDetailActions(c);
-    });
-  });
+  const clSearch = document.getElementById('clientSearch');
+  if(clSearch){
+    clSearch.addEventListener('input', ()=>{ clientSearch = clSearch.value; refreshClientList(); });   // list only, so typing isn't interrupted
+    document.getElementById('clSort').addEventListener('change', e=>{ clientSort = e.target.value; render(); });
+    document.getElementById('clFilter').addEventListener('change', e=>{ clientFilter = e.target.value; render(); });
+    const clr = document.getElementById('clClear');
+    if(clr) clr.addEventListener('click', ()=>{ clientSearch=''; clientFilter='all'; clientSort='az'; render(); });
+  }
+  bindClientRows();
 
   // Schedule view
   const addJobBtn = document.getElementById('addJobBtn');
